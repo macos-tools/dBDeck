@@ -1,0 +1,56 @@
+# dBDeck（音枢）
+
+dBDeck is a menu bar per-app audio controller for macOS 14.2 and later.
+
+## Free MVP
+
+- Lists apps that are actively producing audio.
+- Adjusts each app from 0–100% without changing system volume.
+- Mutes and unmutes individual apps.
+- Remembers volume and mute state by bundle identifier.
+- Runs as a menu-bar-only app with no Dock icon.
+
+Audio stays on the Mac. dBDeck uses Apple's Core Audio Process Tap API, a private
+aggregate device, and a real-time gain callback. The first adjustment requires
+macOS System Audio Recording permission.
+
+## Build and run
+
+```sh
+./script/build_and_run.sh
+```
+
+The script builds a signed development app at `dist/dBDeck.app` and launches it.
+The Codex Run button uses the same command.
+
+Optional modes:
+
+```sh
+./script/build_and_run.sh --verify
+./script/build_and_run.sh --logs
+./script/build_and_run.sh --debug
+```
+
+## Verify
+
+```sh
+./script/test.sh
+```
+
+This checks settings persistence, real-time gain/mute sample processing, and
+Core Audio discovery against a real audio-producing process.
+
+To verify the complete signed Process Tap and aggregate-device route in a Debug
+build, run:
+
+```sh
+./script/verify_route.sh
+```
+
+macOS asks for System Audio Recording permission the first time this route runs.
+
+## Current scope
+
+The free MVP follows the current default output device. Per-app device routing,
+ducking, profiles, EQ, shortcuts, CLI, Shortcuts, and Raycast integration remain
+future Pro work.
