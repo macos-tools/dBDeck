@@ -2,46 +2,18 @@ import AppKit
 import OSLog
 import SwiftUI
 
-enum MenuBarIcon {
-    private static let resolved: (image: NSImage, loadedFromBundle: Bool) = {
-        if let url = Bundle.main.url(
-            forResource: "dBDeckMenuBarIcon",
-            withExtension: "svg"
-        ), let image = NSImage(contentsOf: url) {
-            image.isTemplate = true
-            return (image, true)
-        }
-
-        let fallback = NSImage(
-            systemSymbolName: "speaker.wave.2.fill",
-            accessibilityDescription: "dBDeck"
-        ) ?? NSImage(size: NSSize(width: 18, height: 18))
-        fallback.isTemplate = true
-        return (fallback, false)
-    }()
-
-    static var image: NSImage { resolved.image }
-    static var loadedFromBundle: Bool { resolved.loadedFromBundle }
-}
-
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     let store = AppAudioStore()
 
     private let logger = Logger(subsystem: "com.dbdeck.mac", category: "App")
     private var mixerWindowController: NSWindowController?
-    private var statusItemController: StatusItemController?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         ProcessInfo.processInfo.disableAutomaticTermination("dBDeck menu bar service")
         ProcessInfo.processInfo.disableSuddenTermination()
-        statusItemController = StatusItemController(store: store)
 
-        if MenuBarIcon.loadedFromBundle {
-            logger.info("Menu bar template icon loaded from bundled SVG")
-        } else {
-            logger.error("Menu bar template icon missing; using system fallback")
-        }
+        logger.info("Menu bar system symbol configured")
 
 #if DEBUG
         let arguments = ProcessInfo.processInfo.arguments
@@ -110,8 +82,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 @main
 struct dBDeckApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
+    @AppStorage("menuBarExtraInserted.v3") private var isMenuBarExtraInserted = true
 
     var body: some Scene {
+        MenuBarExtra(
+            "dBDeck",
+            systemImage: "slider.vertical.3",
+            isInserted: $isMenuBarExtraInserted
+        ) {
+            QuickMixerView(store: appDelegate.store)
+        }
+        .menuBarExtraStyle(.window)
+
         Settings {
             EmptyView()
         }

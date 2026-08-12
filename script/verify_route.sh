@@ -4,7 +4,7 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 VERIFY_DIR="$ROOT_DIR/.build/verification"
 TEST_AUDIO="$VERIFY_DIR/route-test.aiff"
-APP_BINARY="$ROOT_DIR/dist/dBDeck.app/Contents/MacOS/dBDeck"
+APP_BINARY="$VERIFY_DIR/dBDeck.app/Contents/MacOS/dBDeck"
 
 mkdir -p "$VERIFY_DIR"
 "$ROOT_DIR/script/build_and_run.sh" --stage

@@ -8,12 +8,8 @@ MIN_SYSTEM_VERSION="14.2"
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DIST_DIR="$ROOT_DIR/dist"
-APP_BUNDLE="$DIST_DIR/$APP_NAME.app"
-APP_CONTENTS="$APP_BUNDLE/Contents"
-APP_MACOS="$APP_CONTENTS/MacOS"
-APP_RESOURCES="$APP_CONTENTS/Resources"
-APP_BINARY="$APP_MACOS/$APP_NAME"
-INFO_PLIST="$APP_CONTENTS/Info.plist"
+VERIFY_DIR="$ROOT_DIR/.build/verification"
+LSREGISTER="/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister"
 
 case "$MODE" in
   run|--debug|debug|--logs|logs|--telemetry|telemetry|--verify|verify|--stage|stage)
@@ -24,18 +20,52 @@ case "$MODE" in
     ;;
 esac
 
+stop_app() {
+  pkill -x "$APP_NAME" >/dev/null 2>&1 || return 0
+
+  for _ in {1..50}; do
+    if ! pgrep -x "$APP_NAME" >/dev/null 2>&1; then
+      return 0
+    fi
+    sleep 0.1
+  done
+
+  echo "$APP_NAME did not terminate; refusing to replace its running app bundle" >&2
+  exit 1
+}
+
+case "$MODE" in
+  --stage|stage)
+    APP_BUNDLE="$VERIFY_DIR/$APP_NAME.app"
+    ;;
+  *)
+    stop_app
+    APP_BUNDLE="$DIST_DIR/$APP_NAME.app"
+    ;;
+esac
+
 cd "$ROOT_DIR"
 swift build --disable-sandbox --product "$APP_NAME"
 BUILD_BINARY="$(swift build --disable-sandbox --show-bin-path)/$APP_NAME"
 
-rm -rf "$APP_BUNDLE"
-mkdir -p "$APP_MACOS" "$APP_RESOURCES"
-cp "$BUILD_BINARY" "$APP_BINARY"
-cp "$ROOT_DIR/Resources/dBDeck.icns" "$APP_RESOURCES/dBDeck.icns"
-cp "$ROOT_DIR/Resources/dBDeckMenuBarIcon.svg" "$APP_RESOURCES/dBDeckMenuBarIcon.svg"
-chmod +x "$APP_BINARY"
+mkdir -p "$(dirname "$APP_BUNDLE")"
+STAGING_DIR="$(mktemp -d "$(dirname "$APP_BUNDLE")/.dBDeck-stage.XXXXXX")"
+trap 'rm -rf "$STAGING_DIR"' EXIT
 
-cat >"$INFO_PLIST" <<PLIST
+STAGED_APP="$STAGING_DIR/$APP_NAME.app"
+STAGED_CONTENTS="$STAGED_APP/Contents"
+STAGED_MACOS="$STAGED_CONTENTS/MacOS"
+STAGED_RESOURCES="$STAGED_CONTENTS/Resources"
+STAGED_BINARY="$STAGED_MACOS/$APP_NAME"
+STAGED_INFO_PLIST="$STAGED_CONTENTS/Info.plist"
+
+mkdir -p "$STAGED_MACOS" "$STAGED_RESOURCES"
+cp "$BUILD_BINARY" "$STAGED_BINARY"
+cp "$ROOT_DIR/Resources/dBDeck.icns" "$STAGED_RESOURCES/dBDeck.icns"
+cp "$ROOT_DIR/Resources/dBDeckMenuBarIcon.svg" "$STAGED_RESOURCES/dBDeckMenuBarIcon.svg"
+chmod +x "$STAGED_BINARY"
+
+cat >"$STAGED_INFO_PLIST" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -55,7 +85,7 @@ cat >"$INFO_PLIST" <<PLIST
   <key>CFBundleShortVersionString</key>
   <string>0.1.0</string>
   <key>CFBundleVersion</key>
-  <string>2</string>
+  <string>3</string>
   <key>LSMinimumSystemVersion</key>
   <string>$MIN_SYSTEM_VERSION</string>
   <key>LSUIElement</key>
@@ -67,11 +97,24 @@ cat >"$INFO_PLIST" <<PLIST
 </dict>
 </plist>
 PLIST
-codesign --force --sign - --entitlements "$ROOT_DIR/Resources/dBDeck.entitlements" "$APP_BUNDLE"
+codesign --force --sign - --entitlements "$ROOT_DIR/Resources/dBDeck.entitlements" "$STAGED_APP"
+
+PREVIOUS_APP="$STAGING_DIR/previous.app"
+if [[ -e "$APP_BUNDLE" ]]; then
+  mv "$APP_BUNDLE" "$PREVIOUS_APP"
+fi
+if ! mv "$STAGED_APP" "$APP_BUNDLE"; then
+  if [[ -e "$PREVIOUS_APP" ]]; then
+    mv "$PREVIOUS_APP" "$APP_BUNDLE"
+  fi
+  exit 1
+fi
+
+APP_BINARY="$APP_BUNDLE/Contents/MacOS/$APP_NAME"
 
 open_app() {
-  pkill -x "$APP_NAME" >/dev/null 2>&1 || true
-  /usr/bin/open -n "$APP_BUNDLE"
+  "$LSREGISTER" -f "$APP_BUNDLE"
+  /usr/bin/open "$APP_BUNDLE"
 }
 
 case "$MODE" in
@@ -79,7 +122,6 @@ case "$MODE" in
     open_app
     ;;
   --debug|debug)
-    pkill -x "$APP_NAME" >/dev/null 2>&1 || true
     lldb -- "$APP_BINARY"
     ;;
   --logs|logs)
