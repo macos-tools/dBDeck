@@ -10,11 +10,17 @@ final class AppAudioStore: ObservableObject {
 
     private let discovery = AudioProcessDiscovery()
     private let preferences: VolumePreferences
+    private let playbackHistory: PlaybackHistoryStore
     private let engine = AppAudioEngine()
     private var refreshTimer: Timer?
+    private var lastRefreshDate: Date?
 
-    init(preferences: VolumePreferences = VolumePreferences()) {
+    init(
+        preferences: VolumePreferences = VolumePreferences(),
+        playbackHistory: PlaybackHistoryStore = PlaybackHistoryStore()
+    ) {
         self.preferences = preferences
+        self.playbackHistory = playbackHistory
         settings = preferences.load()
         refresh()
         refreshTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
@@ -33,6 +39,10 @@ final class AppAudioStore: ObservableObject {
         apps.contains { setting(for: $0).needsProcessing }
     }
 
+    var priorityApps: [AudioApp] {
+        Array(apps.prefix(5))
+    }
+
     func setting(for app: AudioApp) -> AppVolumeSetting {
         settings[app.id] ?? .passthrough
     }
@@ -49,6 +59,11 @@ final class AppAudioStore: ObservableObject {
         update(setting, for: app)
     }
 
+    func playbackMinutes(for app: AudioApp) -> Int {
+        playbackHistory.records.first(where: { $0.bundleID == app.bundleID })?
+            .playbackMinutes ?? 0
+    }
+
     func retry() {
         errorMessage = nil
         engine.retryFailures()
@@ -57,12 +72,40 @@ final class AppAudioStore: ObservableObject {
 
     func refresh() {
         do {
-            let discoveredApps = try discovery.activeApps()
-            apps = discoveredApps
-            engine.retainOnly(appIDs: Set(discoveredApps.map(\.id)))
+            let now = Date()
+            let elapsed = lastRefreshDate.map { now.timeIntervalSince($0) } ?? 0
+            lastRefreshDate = now
+
+            let activeApps = try discovery.activeApps()
+            let activeAppsByBundleID = Dictionary(
+                uniqueKeysWithValues: activeApps.compactMap { app in
+                    app.bundleID.map { ($0, app) }
+                }
+            )
+            let activeBundleIDs = Set(activeAppsByBundleID.keys)
+            playbackHistory.observe(
+                activeApps.compactMap { app in
+                    guard let bundleID = app.bundleID else { return nil }
+                    return PlaybackObservation(
+                        bundleID: bundleID,
+                        name: app.name,
+                        bundlePath: app.bundleURL?.path
+                    )
+                },
+                elapsed: elapsed,
+                now: now
+            )
+
+            apps = playbackHistory
+                .prioritizedRecords(activeBundleIDs: activeBundleIDs)
+                .map { record in
+                    activeAppsByBundleID[record.bundleID]
+                        ?? historicalAudioApp(from: record)
+                }
+            engine.retainOnly(appIDs: Set(activeApps.map(\.id)))
 
             var firstError: String?
-            for app in discoveredApps {
+            for app in activeApps {
                 if let message = engine.apply(setting(for: app), to: app), firstError == nil {
                     firstError = "\(app.name): \(message)"
                 }
@@ -83,10 +126,30 @@ final class AppAudioStore: ObservableObject {
         updatedSettings[app.id] = newSetting.normalized
         settings = updatedSettings
         preferences.save(updatedSettings)
-        if let message = engine.apply(newSetting, to: app) {
+        if app.isPlaying, let message = engine.apply(newSetting, to: app) {
             errorMessage = "\(app.name): \(message)"
         } else {
             errorMessage = nil
         }
+    }
+
+    private func historicalAudioApp(from record: AppPlaybackRecord) -> AudioApp {
+        let storedURL = record.bundlePath.map { URL(fileURLWithPath: $0) }
+        let currentURL = NSWorkspace.shared.urlForApplication(
+            withBundleIdentifier: record.bundleID
+        )
+        let bundleURL = currentURL ?? storedURL
+        let icon = bundleURL.map { NSWorkspace.shared.icon(forFile: $0.path) }
+
+        return AudioApp(
+            id: record.bundleID,
+            bundleID: record.bundleID,
+            name: record.name,
+            icon: icon,
+            bundleURL: bundleURL,
+            processIDs: [],
+            processIdentifiers: [],
+            isPlaying: false
+        )
     }
 }

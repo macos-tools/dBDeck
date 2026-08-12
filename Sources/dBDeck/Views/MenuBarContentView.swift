@@ -13,19 +13,19 @@ struct MenuBarContentView: View {
                 Divider()
             }
 
-            if store.apps.isEmpty {
+            if store.priorityApps.isEmpty {
                 ContentUnavailableView(
-                    "No Apps Playing Audio",
-                    systemImage: "speaker.slash",
-                    description: Text("Start playback in an app, then open dBDeck again.")
+                    "No Playback History",
+                    systemImage: "speaker.wave.2",
+                    description: Text("Apps appear here after they produce audio.")
                 )
                 .frame(height: 180)
             } else {
                 ScrollView {
                     LazyVStack(spacing: 2) {
-                        ForEach(store.apps) { app in
+                        ForEach(store.priorityApps) { app in
                             AppVolumeRow(app: app, store: store)
-                            if app.id != store.apps.last?.id {
+                            if app.id != store.priorityApps.last?.id {
                                 Divider().padding(.leading, 38)
                             }
                         }
@@ -38,7 +38,7 @@ struct MenuBarContentView: View {
             Divider()
             footer
         }
-        .frame(width: 350)
+        .frame(width: 380, height: 430)
     }
 
     private var header: some View {
@@ -46,7 +46,7 @@ struct MenuBarContentView: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text("dBDeck")
                     .font(.headline)
-                Text("音枢 · Per-App Audio Control")
+                Text("Top apps by playback time")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -81,7 +81,7 @@ struct MenuBarContentView: View {
 
     private var footer: some View {
         HStack {
-            Text("Settings are remembered per app")
+            Text("Playing first · Top 5")
                 .font(.caption2)
                 .foregroundStyle(.tertiary)
             Spacer()

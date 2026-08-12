@@ -6,12 +6,14 @@ VERIFY_DIR="$ROOT_DIR/.build/verification"
 VERIFY_BINARY="$VERIFY_DIR/verify-volume-preferences"
 DSP_VERIFY_BINARY="$VERIFY_DIR/verify-audio-dsp"
 DISCOVERY_VERIFY_BINARY="$VERIFY_DIR/verify-audio-discovery"
+HISTORY_VERIFY_BINARY="$VERIFY_DIR/verify-playback-history"
 FIXTURE_NAME="dBDeckAudioFixture"
 FIXTURE_BUNDLE_ID="com.dbdeck.tests.audio-fixture"
 FIXTURE_BUNDLE="$VERIFY_DIR/$FIXTURE_NAME.app"
 FIXTURE_BINARY="$FIXTURE_BUNDLE/Contents/MacOS/$FIXTURE_NAME"
 
 mkdir -p "$VERIFY_DIR/module-cache"
+pkill -x dBDeck >/dev/null 2>&1 || true
 
 swiftc \
   -module-cache-path "$VERIFY_DIR/module-cache" \
@@ -21,6 +23,15 @@ swiftc \
   -o "$VERIFY_BINARY"
 
 "$VERIFY_BINARY"
+
+swiftc \
+  -module-cache-path "$VERIFY_DIR/module-cache" \
+  "$ROOT_DIR/Sources/dBDeck/Models/AppPlaybackRecord.swift" \
+  "$ROOT_DIR/Sources/dBDeck/Stores/PlaybackHistoryStore.swift" \
+  "$ROOT_DIR/Tests/dBDeckTests/PlaybackHistoryStoreTests.swift" \
+  -o "$HISTORY_VERIFY_BINARY"
+
+"$HISTORY_VERIFY_BINARY"
 
 clang \
   -std=c11 \

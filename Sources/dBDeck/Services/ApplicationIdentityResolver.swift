@@ -50,12 +50,18 @@ struct ApplicationIdentityResolver {
         else {
             return nil
         }
-        return ApplicationIdentity(bundleID: bundleID, name: name, icon: icon)
+        return ApplicationIdentity(
+            bundleID: bundleID,
+            name: name,
+            icon: icon,
+            bundleURL: application.bundleURL
+        )
     }
 
     private func identity(forApplicationURL url: URL) -> ApplicationIdentity? {
-        guard url.pathExtension.caseInsensitiveCompare("app") == .orderedSame,
-              let bundle = Bundle(url: url),
+        let applicationURL = outermostApplicationURL(containing: url)
+        guard applicationURL.pathExtension.caseInsensitiveCompare("app") == .orderedSame,
+              let bundle = Bundle(url: applicationURL),
               let bundleID = bundle.bundleIdentifier
         else {
             return nil
@@ -64,9 +70,29 @@ struct ApplicationIdentityResolver {
         let info = bundle.localizedInfoDictionary ?? bundle.infoDictionary ?? [:]
         let name = (info["CFBundleDisplayName"] as? String)
             ?? (info["CFBundleName"] as? String)
-            ?? url.deletingPathExtension().lastPathComponent
-        let icon = NSWorkspace.shared.icon(forFile: url.path)
-        return ApplicationIdentity(bundleID: bundleID, name: name, icon: icon)
+            ?? applicationURL.deletingPathExtension().lastPathComponent
+        let icon = NSWorkspace.shared.icon(forFile: applicationURL.path)
+        return ApplicationIdentity(
+            bundleID: bundleID,
+            name: name,
+            icon: icon,
+            bundleURL: applicationURL
+        )
+    }
+
+    private func outermostApplicationURL(containing url: URL) -> URL {
+        var candidate = url.standardizedFileURL
+        var current = candidate
+
+        for _ in 0..<32 {
+            if current.pathExtension.caseInsensitiveCompare("app") == .orderedSame {
+                candidate = current
+            }
+            let parent = current.deletingLastPathComponent()
+            guard parent.path.count < current.path.count else { break }
+            current = parent
+        }
+        return candidate
     }
 
     private func parentApplicationIdentity(

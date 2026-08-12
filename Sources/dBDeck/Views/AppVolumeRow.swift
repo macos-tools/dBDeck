@@ -26,9 +26,18 @@ struct AppVolumeRow: View {
 
             VStack(alignment: .leading, spacing: 5) {
                 HStack(spacing: 6) {
+                    if app.isPlaying {
+                        Circle()
+                            .fill(.green)
+                            .frame(width: 6, height: 6)
+                            .help("Playing now")
+                    }
                     Text(app.name)
                         .lineLimit(1)
                     Spacer(minLength: 4)
+                    Text(app.isPlaying ? "Playing" : "\(store.playbackMinutes(for: app)) min")
+                        .font(.caption)
+                        .foregroundStyle(app.isPlaying ? .green : .secondary)
                     Text(setting.isMuted ? "Muted" : "\(Int(setting.volume * 100))%")
                         .font(.caption.monospacedDigit())
                         .foregroundStyle(.secondary)

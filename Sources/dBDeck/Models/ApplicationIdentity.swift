@@ -5,4 +5,5 @@ struct ApplicationIdentity {
     let bundleID: String
     let name: String
     let icon: NSImage
+    let bundleURL: URL?
 }
