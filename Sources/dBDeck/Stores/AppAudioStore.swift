@@ -335,6 +335,7 @@ final class AppAudioStore: ObservableObject {
     }
 
     private func rebuildVisibleApps(activeApps: [AudioApp]) {
+        let now = Date()
         let activeAppsByBundleID = Dictionary(
             uniqueKeysWithValues: activeApps.compactMap { app in
                 app.bundleID.map { ($0, app) }
@@ -342,20 +343,33 @@ final class AppAudioStore: ObservableObject {
         )
         let activeBundleIDs = Set(activeAppsByBundleID.keys)
         let runningBundleIDs = Set(runningApplicationBundleIDsByPID.values)
-        let refreshedApps = playbackHistory
+        let installedRecordsAndApps = playbackHistory
             .prioritizedRecords(
                 playingBundleIDs: activeBundleIDs,
                 runningBundleIDs: runningBundleIDs
             )
-            .compactMap { record in
+            .compactMap { record -> (AppPlaybackRecord, AudioApp)? in
                 if let activeApp = activeAppsByBundleID[record.bundleID] {
-                    return activeApp
+                    return (record, activeApp)
                 }
-                return historicalAudioApp(
+                guard let app = historicalAudioApp(
                     from: record,
                     isRunning: runningBundleIDs.contains(record.bundleID)
-                )
+                ) else {
+                    return nil
+                }
+                return (record, app)
             }
+        let currentListCount = installedRecordsAndApps.count
+        let refreshedApps = installedRecordsAndApps.compactMap { record, app in
+            playbackHistory.shouldHideFromList(
+                record,
+                currentListCount: currentListCount,
+                playingBundleIDs: activeBundleIDs,
+                runningBundleIDs: runningBundleIDs,
+                now: now
+            ) ? nil : app
+        }
         publishAppsIfChanged(refreshedApps)
     }
 

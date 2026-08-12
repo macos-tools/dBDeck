@@ -95,8 +95,89 @@ enum PlaybackHistoryStoreVerifier {
 
         try verifyNestedHelperMigration()
         try verifyLegacyMinuteMigration()
+        try verifyDormantHistoryVisibility()
 
         print("PlaybackHistory second persistence, migration, and ranking verification passed")
+    }
+
+    private static func verifyDormantHistoryVisibility() throws {
+        let suiteName = "dBDeckDormantVisibilityTests.\(UUID().uuidString)"
+        guard let defaults = UserDefaults(suiteName: suiteName) else {
+            throw PlaybackHistoryVerificationFailure.failed("Could not create visibility suite")
+        }
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let store = PlaybackHistoryStore(defaults: defaults)
+        let now = Date(timeIntervalSince1970: 2_000_000)
+        let stale = AppPlaybackRecord(
+            bundleID: "com.example.stale",
+            name: "Stale",
+            bundlePath: nil,
+            playbackSeconds: 60,
+            lastPlayedAt: now.addingTimeInterval(
+                -PlaybackHistoryStore.dormantHistoryInterval - 1
+            )
+        )
+        let boundary = AppPlaybackRecord(
+            bundleID: "com.example.boundary",
+            name: "Boundary",
+            bundlePath: nil,
+            playbackSeconds: 60,
+            lastPlayedAt: now.addingTimeInterval(
+                -PlaybackHistoryStore.dormantHistoryInterval
+            )
+        )
+
+        guard !store.shouldHideFromList(
+            stale,
+            currentListCount: 10,
+            playingBundleIDs: [],
+            runningBundleIDs: [],
+            now: now
+        ) else {
+            throw PlaybackHistoryVerificationFailure.failed(
+                "A list of 10 apps was pruned"
+            )
+        }
+        guard store.shouldHideFromList(
+            stale,
+            currentListCount: 11,
+            playingBundleIDs: [],
+            runningBundleIDs: [],
+            now: now
+        ) else {
+            throw PlaybackHistoryVerificationFailure.failed(
+                "Dormant history was not hidden above the list limit"
+            )
+        }
+        guard !store.shouldHideFromList(
+            boundary,
+            currentListCount: 11,
+            playingBundleIDs: [],
+            runningBundleIDs: [],
+            now: now
+        ) else {
+            throw PlaybackHistoryVerificationFailure.failed(
+                "Exactly seven-day-old history was hidden too early"
+            )
+        }
+        guard !store.shouldHideFromList(
+            stale,
+            currentListCount: 11,
+            playingBundleIDs: [stale.bundleID],
+            runningBundleIDs: [],
+            now: now
+        ), !store.shouldHideFromList(
+            stale,
+            currentListCount: 11,
+            playingBundleIDs: [],
+            runningBundleIDs: [stale.bundleID],
+            now: now
+        ) else {
+            throw PlaybackHistoryVerificationFailure.failed(
+                "Playing or running apps were hidden"
+            )
+        }
     }
 
     private static func verifyNestedHelperMigration() throws {

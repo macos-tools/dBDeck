@@ -1,6 +1,9 @@
 import Foundation
 
 final class PlaybackHistoryStore {
+    static let visibleHistoryLimit = 10
+    static let dormantHistoryInterval: TimeInterval = 7 * 24 * 60 * 60
+
     private let defaults: UserDefaults
     private let storageKey: String
     private var recordsByBundleID: [String: AppPlaybackRecord]
@@ -107,6 +110,24 @@ final class PlaybackHistoryStore {
             }
             return lhs.name.localizedCaseInsensitiveCompare(rhs.name) == .orderedAscending
         }
+    }
+
+    func shouldHideFromList(
+        _ record: AppPlaybackRecord,
+        currentListCount: Int,
+        playingBundleIDs: Set<String>,
+        runningBundleIDs: Set<String>,
+        now: Date
+    ) -> Bool {
+        guard currentListCount > Self.visibleHistoryLimit,
+              !playingBundleIDs.contains(record.bundleID),
+              !runningBundleIDs.contains(record.bundleID)
+        else {
+            return false
+        }
+        return record.lastPlayedAt < now.addingTimeInterval(
+            -Self.dormantHistoryInterval
+        )
     }
 
     private func priority(
