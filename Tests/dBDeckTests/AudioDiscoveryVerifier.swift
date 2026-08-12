@@ -7,11 +7,24 @@ enum AudioDiscoveryVerificationError: Error {
 @main
 enum AudioDiscoveryVerifier {
     static func main() throws {
-        let apps = try AudioProcessDiscovery().activeApps()
-        guard !apps.isEmpty else {
+        guard ProcessInfo.processInfo.arguments.count > 1 else {
             throw AudioDiscoveryVerificationError.noActiveProcess
         }
-        let summary = apps.map { "\($0.name) [\($0.processIDs.count) process(es)]" }.joined(separator: ", ")
-        print("Audio process discovery passed: \(summary)")
+        let expectedBundleID = ProcessInfo.processInfo.arguments[1]
+        var matchedApp: AudioApp?
+        for _ in 0..<30 {
+            matchedApp = try AudioProcessDiscovery().activeApps().first {
+                $0.bundleID == expectedBundleID
+            }
+            if matchedApp != nil { break }
+            Thread.sleep(forTimeInterval: 0.1)
+        }
+        guard let matchedApp else {
+            throw AudioDiscoveryVerificationError.noActiveProcess
+        }
+        guard matchedApp.name == "dBDeck Audio Fixture" else {
+            throw AudioDiscoveryVerificationError.noActiveProcess
+        }
+        print("Audio application discovery passed: \(matchedApp.name)")
     }
 }

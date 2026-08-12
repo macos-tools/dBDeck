@@ -3,31 +3,77 @@ import CoreAudio
 import Foundation
 
 struct AudioProcessDiscovery {
+    private struct ActiveProcess {
+        let audioObjectID: AudioObjectID
+        let pid: pid_t
+        let reportedBundleID: String?
+    }
+
     private struct ProcessRecord {
         let audioObjectID: AudioObjectID
         let pid: pid_t
-        let bundleID: String?
-        let runningApplication: NSRunningApplication?
+        let identity: ApplicationIdentity
 
         var stableID: String {
-            bundleID ?? "pid:\(pid)"
+            identity.bundleID
         }
     }
 
-    func activeApps() throws -> [AudioApp] {
-        let processObjectIDs = try CoreAudioSupport.readObjectIDs(
-            objectID: CoreAudioSupport.systemObject,
-            selector: kAudioHardwarePropertyProcessObjectList,
-            operation: "Read audio process list"
-        )
+    private let identityResolver = ApplicationIdentityResolver()
 
+    func activeApps() throws -> [AudioApp] {
         let runningApplications = Dictionary(
             uniqueKeysWithValues: NSWorkspace.shared.runningApplications.map {
                 ($0.processIdentifier, $0)
             }
         )
 
-        let records = processObjectIDs.compactMap { objectID -> ProcessRecord? in
+        let records = try activeProcesses().compactMap { process -> ProcessRecord? in
+            guard let identity = identityResolver.resolve(
+                pid: process.pid,
+                reportedBundleID: process.reportedBundleID,
+                runningApplications: runningApplications
+            ) else {
+                return nil
+            }
+
+            return ProcessRecord(
+                audioObjectID: process.audioObjectID,
+                pid: process.pid,
+                identity: identity
+            )
+        }
+
+        return Dictionary(grouping: records, by: \.stableID)
+            .map { stableID, group in
+                let identity = group[0].identity
+                return AudioApp(
+                    id: stableID,
+                    bundleID: identity.bundleID,
+                    name: identity.name,
+                    icon: identity.icon,
+                    processIDs: group.map(\.audioObjectID).sorted(),
+                    processIdentifiers: group.map(\.pid).sorted()
+                )
+            }
+            .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+    }
+
+    func activeProcessObjectIDs(for processID: pid_t) throws -> [AudioObjectID] {
+        try activeProcesses()
+            .filter { $0.pid == processID }
+            .map(\.audioObjectID)
+            .sorted()
+    }
+
+    private func activeProcesses() throws -> [ActiveProcess] {
+        let processObjectIDs = try CoreAudioSupport.readObjectIDs(
+            objectID: CoreAudioSupport.systemObject,
+            selector: kAudioHardwarePropertyProcessObjectList,
+            operation: "Read audio process list"
+        )
+
+        return processObjectIDs.compactMap { objectID in
             guard
                 let isRunningOutput: UInt32 = try? CoreAudioSupport.readInteger(
                     objectID: objectID,
@@ -47,43 +93,15 @@ struct AudioProcessDiscovery {
                 return nil
             }
 
-            let rawBundleID = try? CoreAudioSupport.readString(
-                objectID: objectID,
-                selector: kAudioProcessPropertyBundleID,
-                operation: "Read audio process bundle ID"
-            )
-            let application = runningApplications[pid]
-            let bundleID = [rawBundleID, application?.bundleIdentifier]
-                .compactMap { $0 }
-                .first { !$0.isEmpty }
-
-            return ProcessRecord(
+            return ActiveProcess(
                 audioObjectID: objectID,
                 pid: pid,
-                bundleID: bundleID,
-                runningApplication: application
+                reportedBundleID: try? CoreAudioSupport.readString(
+                    objectID: objectID,
+                    selector: kAudioProcessPropertyBundleID,
+                    operation: "Read audio process bundle ID"
+                )
             )
         }
-
-        return Dictionary(grouping: records, by: \.stableID)
-            .map { stableID, group in
-                let app = group.compactMap(\.runningApplication).first
-                let fallbackName = group.first.map { processName(for: $0.pid) } ?? "Audio Process"
-                return AudioApp(
-                    id: stableID,
-                    bundleID: group.compactMap(\.bundleID).first,
-                    name: app?.localizedName ?? fallbackName,
-                    icon: app?.icon,
-                    processIDs: group.map(\.audioObjectID).sorted(),
-                    processIdentifiers: group.map(\.pid).sorted()
-                )
-            }
-            .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
-    }
-
-    private func processName(for pid: pid_t) -> String {
-        let name = ProcessInfo.processInfo.processName
-        guard pid != getpid() else { return name }
-        return "Process \(pid)"
     }
 }

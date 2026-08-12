@@ -1,4 +1,5 @@
 #if DEBUG
+import CoreAudio
 import Foundation
 
 enum AudioRouteVerificationError: LocalizedError {
@@ -21,24 +22,23 @@ struct AudioRouteIntegrationVerifier {
             throw AudioRouteVerificationError.invalidProcessID
         }
 
-        var targetApp: AudioApp?
+        var processObjectIDs: [AudioObjectID] = []
         for _ in 0..<30 {
-            targetApp = try AudioProcessDiscovery()
-                .activeApps()
-                .first { $0.processIdentifiers.contains(processID) }
-            if targetApp != nil {
+            processObjectIDs = try AudioProcessDiscovery()
+                .activeProcessObjectIDs(for: processID)
+            if !processObjectIDs.isEmpty {
                 break
             }
             Thread.sleep(forTimeInterval: 0.1)
         }
 
-        guard let targetApp else {
+        guard !processObjectIDs.isEmpty else {
             throw AudioRouteVerificationError.processNotDiscovered(processID)
         }
 
         let route = try ProcessAudioRoute(
             appID: "integration-verifier",
-            processIDs: targetApp.processIDs,
+            processIDs: processObjectIDs,
             gain: 0.25
         )
         Thread.sleep(forTimeInterval: 0.8)

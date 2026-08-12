@@ -10,6 +10,10 @@ dBDeck is a menu bar per-app audio controller for macOS 14.2 and later.
 - Remembers volume and mute state by bundle identifier.
 - Runs as a menu-bar-only app with no Dock icon.
 
+Launching the app opens its panel immediately. Opening it again, or clicking the
+speaker icon in the menu bar, reopens the same panel. Background daemons and raw
+process IDs are intentionally hidden; the list contains identifiable app bundles.
+
 Audio stays on the Mac. dBDeck uses Apple's Core Audio Process Tap API, a private
 aggregate device, and a real-time gain callback. The first adjustment requires
 macOS System Audio Recording permission.

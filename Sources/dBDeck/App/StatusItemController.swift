@@ -1,8 +1,10 @@
 import AppKit
+import OSLog
 import SwiftUI
 
 @MainActor
 final class StatusItemController: NSObject {
+    private let logger = Logger(subsystem: "com.dbdeck.app", category: "MenuBar")
     private let statusItem: NSStatusItem
     private let popover = NSPopover()
 
@@ -20,6 +22,7 @@ final class StatusItemController: NSObject {
             button.toolTip = "dBDeck · 音枢"
             button.target = self
             button.action = #selector(togglePopover)
+            button.sendAction(on: [.leftMouseUp, .rightMouseUp])
             button.setAccessibilityLabel("Open dBDeck")
         }
 
@@ -29,6 +32,7 @@ final class StatusItemController: NSObject {
         popover.contentViewController = NSHostingController(
             rootView: MenuBarContentView(store: store)
         )
+        logger.info("Menu bar status item installed")
     }
 
     deinit {
@@ -36,14 +40,30 @@ final class StatusItemController: NSObject {
     }
 
     @objc
-    private func togglePopover() {
-        if popover.isShown {
-            popover.performClose(nil)
+    func showPopover() {
+        guard let button = statusItem.button else {
+            logger.error("Unable to show popover because status item button is unavailable")
             return
         }
 
-        guard let button = statusItem.button else { return }
+        NSApp.activate(ignoringOtherApps: true)
         popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
-        popover.contentViewController?.view.window?.makeKey()
+        popover.contentViewController?.view.window?.makeKeyAndOrderFront(nil)
+        logger.info("Popover shown")
+    }
+
+    var isPopoverShown: Bool {
+        popover.isShown
+    }
+
+    @objc
+    private func togglePopover() {
+        logger.info("Menu bar button activated")
+        if popover.isShown {
+            popover.performClose(nil)
+            logger.info("Popover closed")
+            return
+        }
+        showPopover()
     }
 }

@@ -37,6 +37,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let store = AppAudioStore()
         self.store = store
         statusItemController = StatusItemController(store: store)
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { [weak self] in
+            self?.statusItemController?.showPopover()
+
+#if DEBUG
+            if ProcessInfo.processInfo.arguments.contains("--verify-popover") {
+                guard self?.statusItemController?.isPopoverShown == true else {
+                    fputs("Menu bar popover verification failed\n", stderr)
+                    exit(EXIT_FAILURE)
+                }
+                print("Menu bar popover verification passed")
+                fflush(stdout)
+                exit(EXIT_SUCCESS)
+            }
+#endif
+        }
+    }
+
+    func applicationShouldHandleReopen(
+        _ sender: NSApplication,
+        hasVisibleWindows flag: Bool
+    ) -> Bool {
+        statusItemController?.showPopover()
+        return true
     }
 }
 
