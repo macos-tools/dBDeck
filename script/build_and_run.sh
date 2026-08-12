@@ -25,7 +25,7 @@ rm -rf "$APP_BUNDLE"
 mkdir -p "$APP_MACOS" "$APP_RESOURCES"
 cp "$BUILD_BINARY" "$APP_BINARY"
 cp "$ROOT_DIR/Resources/dBDeck.icns" "$APP_RESOURCES/dBDeck.icns"
-cp "$ROOT_DIR/Resources/dBDeckMenuBarIcon.png" "$APP_RESOURCES/dBDeckMenuBarIcon.png"
+cp "$ROOT_DIR/Resources/dBDeckMenuBarIcon.svg" "$APP_RESOURCES/dBDeckMenuBarIcon.svg"
 chmod +x "$APP_BINARY"
 
 cat >"$INFO_PLIST" <<PLIST

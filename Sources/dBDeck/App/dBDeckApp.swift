@@ -6,7 +6,7 @@ enum MenuBarIcon {
     private static let resolved: (image: NSImage, loadedFromBundle: Bool) = {
         if let url = Bundle.main.url(
             forResource: "dBDeckMenuBarIcon",
-            withExtension: "png"
+            withExtension: "svg"
         ), let image = NSImage(contentsOf: url) {
             image.isTemplate = true
             return (image, true)
@@ -36,7 +36,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         ProcessInfo.processInfo.disableSuddenTermination()
 
         if MenuBarIcon.loadedFromBundle {
-            logger.info("Menu bar template icon loaded from bundled PNG")
+            logger.info("Menu bar template icon loaded from bundled SVG")
         } else {
             logger.error("Menu bar template icon missing; using system fallback")
         }
@@ -113,7 +113,7 @@ struct dBDeckApp: App {
             Image(nsImage: MenuBarIcon.image)
                 .resizable()
                 .scaledToFit()
-                .frame(width: 18, height: 18)
+                .frame(width: 16, height: 16)
                 .accessibilityLabel("dBDeck")
         }
         .menuBarExtraStyle(.window)
