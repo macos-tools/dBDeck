@@ -82,20 +82,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 @main
 struct dBDeckApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
-    @AppStorage("menuBarExtraInserted.v3") private var isMenuBarExtraInserted = true
 
     var body: some Scene {
-        MenuBarExtra(
-            "dBDeck",
-            systemImage: "slider.vertical.3",
-            isInserted: $isMenuBarExtraInserted
-        ) {
+        MenuBarExtra("dBDeck", systemImage: "slider.vertical.3") {
             QuickMixerView(store: appDelegate.store)
         }
         .menuBarExtraStyle(.window)
-
-        Settings {
-            EmptyView()
-        }
     }
 }
