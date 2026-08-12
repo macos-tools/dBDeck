@@ -55,7 +55,6 @@ build, run:
 
 ```sh
 ./script/verify_route.sh
-./script/verify_popover.sh
 ```
 
 macOS asks for System Audio Recording permission the first time this route runs.

@@ -3,7 +3,7 @@ set -euo pipefail
 
 MODE="${1:-run}"
 APP_NAME="dBDeck"
-BUNDLE_ID="com.dbdeck.app"
+BUNDLE_ID="com.dbdeck.mac"
 MIN_SYSTEM_VERSION="14.2"
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -50,8 +50,6 @@ cat >"$INFO_PLIST" <<PLIST
   <true/>
   <key>NSAudioCaptureUsageDescription</key>
   <string>dBDeck needs access to system audio to adjust each app's volume on this Mac.</string>
-  <key>NSMicrophoneUsageDescription</key>
-  <string>dBDeck uses macOS audio capture permission only to process app audio locally.</string>
   <key>NSPrincipalClass</key>
   <string>NSApplication</string>
 </dict>

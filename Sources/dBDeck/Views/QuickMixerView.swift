@@ -81,7 +81,7 @@ struct QuickMixerView: View {
 
     private var footer: some View {
         HStack {
-            Text("Playing · Running · History · Top 5")
+            Text("Playing · Running · History")
                 .font(.caption2)
                 .foregroundStyle(.tertiary)
             Spacer()

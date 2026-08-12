@@ -35,9 +35,11 @@ struct AppVolumeRow: View {
                     Text(app.name)
                         .lineLimit(1)
                     Spacer(minLength: 4)
-                    Text(activityLabel)
-                        .font(.caption)
-                        .foregroundStyle(app.isPlaying ? .green : .secondary)
+                    if let activityLabel {
+                        Text(activityLabel)
+                            .font(.caption)
+                            .foregroundStyle(app.isPlaying ? .green : .secondary)
+                    }
                     Text(setting.isMuted ? "Muted" : "\(Int(setting.volume * 100))%")
                         .font(.caption.monospacedDigit())
                         .foregroundStyle(.secondary)
@@ -67,9 +69,9 @@ struct AppVolumeRow: View {
         .padding(.vertical, 4)
     }
 
-    private var activityLabel: String {
+    private var activityLabel: String? {
         if app.isPlaying { return "Playing" }
-        if app.isRunning { return "Running · \(store.playbackMinutes(for: app)) min" }
-        return "\(store.playbackMinutes(for: app)) min"
+        if app.isRunning { return "Running" }
+        return nil
     }
 }

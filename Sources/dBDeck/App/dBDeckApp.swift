@@ -2,13 +2,9 @@ import AppKit
 import SwiftUI
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
-    private var store: AppAudioStore?
-    private var statusItemController: StatusItemController?
-
     func applicationDidFinishLaunching(_ notification: Notification) {
         ProcessInfo.processInfo.disableAutomaticTermination("dBDeck menu bar service")
         ProcessInfo.processInfo.disableSuddenTermination()
-        NSApp.setActivationPolicy(.accessory)
 
 #if DEBUG
         let arguments = ProcessInfo.processInfo.arguments
@@ -33,49 +29,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
 #endif
-
-        let store = AppAudioStore()
-        self.store = store
-        statusItemController = StatusItemController(store: store)
-
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { [weak self] in
-#if DEBUG
-            if ProcessInfo.processInfo.arguments.contains("--verify-popover") {
-                self?.statusItemController?.performStatusItemClickForVerification()
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in
-                    guard self?.statusItemController?.isStatusItemActuallyVisible == true else {
-                        fputs("Menu bar status item visibility verification failed\n", stderr)
-                        exit(EXIT_FAILURE)
-                    }
-                    guard self?.statusItemController?.isPopoverShown == true else {
-                        fputs("Menu bar button interaction verification failed\n", stderr)
-                        exit(EXIT_FAILURE)
-                    }
-                    print("Menu bar button interaction verification passed")
-                    fflush(stdout)
-                    exit(EXIT_SUCCESS)
-                }
-                return
-            }
-#endif
-            self?.statusItemController?.showPopover()
-        }
-    }
-
-    func applicationShouldHandleReopen(
-        _ sender: NSApplication,
-        hasVisibleWindows flag: Bool
-    ) -> Bool {
-        statusItemController?.showPopover()
-        return true
     }
 }
 
 @main
 struct dBDeckApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
+    @StateObject private var store = AppAudioStore()
+    @AppStorage("menuBarExtraInserted") private var isMenuBarExtraInserted = true
 
     var body: some Scene {
+        MenuBarExtra(
+            "dBDeck",
+            systemImage: "speaker.wave.2.fill",
+            isInserted: $isMenuBarExtraInserted
+        ) {
+            QuickMixerView(store: store)
+        }
+        .menuBarExtraStyle(.window)
+
         Settings {
             EmptyView()
         }
