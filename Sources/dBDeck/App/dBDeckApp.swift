@@ -10,9 +10,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var mixerWindowController: NSWindowController?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        ProcessInfo.processInfo.disableAutomaticTermination("dBDeck menu bar service")
-        ProcessInfo.processInfo.disableSuddenTermination()
-
         logger.info("Menu bar system symbol configured")
 
 #if DEBUG
