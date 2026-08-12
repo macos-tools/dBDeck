@@ -9,7 +9,6 @@ MIN_SYSTEM_VERSION="14.2"
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DIST_DIR="$ROOT_DIR/dist"
 VERIFY_DIR="$ROOT_DIR/.build/verification"
-LSREGISTER="/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister"
 
 case "$MODE" in
   run|--debug|debug|--logs|logs|--telemetry|telemetry|--verify|verify|--stage|stage)
@@ -99,13 +98,14 @@ cat >"$STAGED_INFO_PLIST" <<PLIST
 PLIST
 codesign --force --sign - --entitlements "$ROOT_DIR/Resources/dBDeck.entitlements" "$STAGED_APP"
 
-PREVIOUS_APP="$STAGING_DIR/previous.app"
-if [[ -e "$APP_BUNDLE" ]]; then
-  mv "$APP_BUNDLE" "$PREVIOUS_APP"
+PREVIOUS_CONTENTS="$STAGING_DIR/previous-Contents"
+mkdir -p "$APP_BUNDLE"
+if [[ -e "$APP_BUNDLE/Contents" ]]; then
+  mv "$APP_BUNDLE/Contents" "$PREVIOUS_CONTENTS"
 fi
-if ! mv "$STAGED_APP" "$APP_BUNDLE"; then
-  if [[ -e "$PREVIOUS_APP" ]]; then
-    mv "$PREVIOUS_APP" "$APP_BUNDLE"
+if ! mv "$STAGED_CONTENTS" "$APP_BUNDLE/Contents"; then
+  if [[ -e "$PREVIOUS_CONTENTS" ]]; then
+    mv "$PREVIOUS_CONTENTS" "$APP_BUNDLE/Contents"
   fi
   exit 1
 fi
@@ -113,7 +113,6 @@ fi
 APP_BINARY="$APP_BUNDLE/Contents/MacOS/$APP_NAME"
 
 open_app() {
-  "$LSREGISTER" -f "$APP_BUNDLE"
   /usr/bin/open "$APP_BUNDLE"
 }
 

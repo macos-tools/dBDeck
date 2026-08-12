@@ -2,6 +2,21 @@ import AppKit
 import OSLog
 import SwiftUI
 
+enum MenuBarIcon {
+    static let image: NSImage = {
+        let image = Bundle.main.url(
+            forResource: "dBDeckMenuBarIcon",
+            withExtension: "svg"
+        ).flatMap(NSImage.init(contentsOf:)) ?? NSImage(
+            systemSymbolName: "slider.vertical.3",
+            accessibilityDescription: "dBDeck"
+        ) ?? NSImage(size: NSSize(width: 18, height: 18))
+        image.isTemplate = true
+        image.size = NSSize(width: 18, height: 18)
+        return image
+    }()
+}
+
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     let store = AppAudioStore()
@@ -10,7 +25,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var mixerWindowController: NSWindowController?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        logger.info("Menu bar system symbol configured")
+        logger.info("Menu bar template icon configured")
 
 #if DEBUG
         let arguments = ProcessInfo.processInfo.arguments
@@ -79,10 +94,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 @main
 struct dBDeckApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
+    @State private var isMenuBarExtraInserted = true
 
     var body: some Scene {
-        MenuBarExtra("dBDeck", systemImage: "slider.vertical.3") {
+        MenuBarExtra(isInserted: $isMenuBarExtraInserted) {
             QuickMixerView(store: appDelegate.store)
+        } label: {
+            Image(nsImage: MenuBarIcon.image)
+                .accessibilityLabel("dBDeck")
         }
         .menuBarExtraStyle(.window)
     }
