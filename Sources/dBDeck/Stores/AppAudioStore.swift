@@ -99,6 +99,20 @@ final class AppAudioStore: ObservableObject {
         update(setting, for: app)
     }
 
+    func resetAllVolumes() {
+        settings.removeAll()
+        for control in volumeControls.values {
+            control.update(.passthrough)
+        }
+        settingsNeedSave = true
+        persistSettings()
+
+        for app in apps where app.isPlaying {
+            _ = engine.apply(.passthrough, to: app)
+        }
+        setErrorMessage(nil)
+    }
+
     func playbackMinutes(for app: AudioApp) -> Int {
         playbackHistory.records.first(where: { $0.bundleID == app.bundleID })?
             .playbackMinutes ?? 0

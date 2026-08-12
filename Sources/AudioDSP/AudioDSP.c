@@ -12,10 +12,24 @@ static Float32 DBDClampGain(Float32 gain) {
     if (gain < 0.0f) {
         return 0.0f;
     }
-    if (gain > 1.0f) {
-        return 1.0f;
+    if (gain > 2.0f) {
+        return 2.0f;
     }
     return gain;
+}
+
+static Float32 DBDSoftLimit(Float32 sample) {
+    const Float32 threshold = 0.95f;
+    const Float32 magnitude = sample < 0.0f ? -sample : sample;
+    if (magnitude <= threshold) {
+        return sample;
+    }
+
+    const Float32 headroom = 1.0f - threshold;
+    const Float32 excess = (magnitude - threshold) / headroom;
+    const Float32 limitedMagnitude = threshold
+        + headroom * excess / (1.0f + excess);
+    return sample < 0.0f ? -limitedMagnitude : limitedMagnitude;
 }
 
 void *DBDGainContextCreate(Float32 initialGain) {
@@ -88,7 +102,10 @@ OSStatus DBDGainAudioIOProc(
         Float32 *destination = output->mData;
 
         for (size_t sample = 0; sample < sampleCount; ++sample) {
-            destination[sample] = source[sample] * gain;
+            const Float32 amplified = source[sample] * gain;
+            destination[sample] = gain > 1.0f
+                ? DBDSoftLimit(amplified)
+                : amplified;
         }
     }
 

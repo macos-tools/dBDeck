@@ -57,6 +57,17 @@ struct QuickMixerView: View {
             }
             Spacer()
             Button {
+                store.resetAllVolumes()
+            } label: {
+                Image(systemName: "arrow.uturn.backward")
+            }
+            .buttonStyle(.plain)
+            .help(
+                "Reset every app to 100% and unmute. "
+                    + "At 100%, audio passes through without processing and uses the least energy."
+            )
+            .accessibilityLabel("Reset all apps to 100%")
+            Button {
                 store.manualRefresh()
             } label: {
                 Image(systemName: "arrow.clockwise")

@@ -4,10 +4,18 @@ struct AppVolumeSetting: Codable, Equatable {
     var volume: Double
     var isMuted: Bool
 
+    static let maximumVolume: Double = 2
     static let passthrough = AppVolumeSetting(volume: 1, isMuted: false)
 
     var normalized: AppVolumeSetting {
-        AppVolumeSetting(volume: min(max(volume, 0), 1), isMuted: isMuted)
+        let clampedVolume = min(max(volume, 0), Self.maximumVolume)
+        let normalizedVolume = abs(clampedVolume - Self.passthrough.volume) < 1e-9
+            ? Self.passthrough.volume
+            : clampedVolume
+        return AppVolumeSetting(
+            volume: normalizedVolume,
+            isMuted: isMuted
+        )
     }
 
     var effectiveGain: Float {
@@ -15,6 +23,6 @@ struct AppVolumeSetting: Codable, Equatable {
     }
 
     var needsProcessing: Bool {
-        isMuted || normalized.volume < 1
+        isMuted || normalized.volume != Self.passthrough.volume
     }
 }

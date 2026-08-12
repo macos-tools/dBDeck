@@ -58,7 +58,8 @@ struct AppVolumeRow: View {
                             get: { control.setting.volume },
                             set: { onVolumeChange($0) }
                         ),
-                        in: 0...1
+                        in: 0...AppVolumeSetting.maximumVolume,
+                        step: 0.01
                     )
                     .disabled(setting.isMuted)
                 }

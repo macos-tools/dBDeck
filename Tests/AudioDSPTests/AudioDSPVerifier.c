@@ -53,7 +53,18 @@ int main(void) {
         }
     }
 
+    DBDGainContextSetGain(context, 2.0f);
+    DBDGainAudioIOProc(0, &timestamp, &input, &timestamp, &output, &timestamp, context);
+    if (!nearlyEqual(outputSamples[2], 0.5f) ||
+        outputSamples[0] <= 0.95f || outputSamples[0] >= 1.0f ||
+        outputSamples[1] >= -0.95f || outputSamples[1] <= -1.0f ||
+        outputSamples[3] >= -0.95f || outputSamples[3] <= -1.0f) {
+        fprintf(stderr, "Boost or soft limiting produced unexpected samples\n");
+        DBDGainContextDestroy(context);
+        return 1;
+    }
+
     DBDGainContextDestroy(context);
-    puts("AudioDSP gain and mute verification passed");
+    puts("AudioDSP gain, mute, boost, and soft-limit verification passed");
     return 0;
 }
