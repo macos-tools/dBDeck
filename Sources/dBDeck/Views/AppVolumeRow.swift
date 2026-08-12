@@ -44,14 +44,21 @@ struct AppVolumeRow: View {
                 }
 
                 HStack(spacing: 8) {
-                    Button {
-                        onToggleMute()
-                    } label: {
+                    InteractiveButton(
+                        helpText: setting.isMuted
+                            ? "Unmute \(app.name)"
+                            : "Mute \(app.name)",
+                        contentPadding: EdgeInsets(
+                            top: 4,
+                            leading: 4,
+                            bottom: 4,
+                            trailing: 4
+                        ),
+                        action: onToggleMute
+                    ) {
                         Image(systemName: setting.isMuted ? "speaker.slash.fill" : "speaker.wave.1.fill")
                             .frame(width: 16)
                     }
-                    .buttonStyle(.plain)
-                    .help(setting.isMuted ? "Unmute \(app.name)" : "Mute \(app.name)")
 
                     Slider(
                         value: Binding(

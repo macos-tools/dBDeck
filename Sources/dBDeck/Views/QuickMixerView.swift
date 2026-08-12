@@ -56,26 +56,29 @@ struct QuickMixerView: View {
                     .foregroundStyle(.secondary)
             }
             Spacer()
-            Button {
-                store.resetAllVolumes()
-            } label: {
-                Image(systemName: "arrow.uturn.backward")
+            HStack(spacing: 12) {
+                InteractiveButton(
+                    helpText: "Rescan audio apps and playback state.",
+                    action: store.manualRefresh
+                ) {
+                    Image(systemName: "arrow.clockwise")
+                        .frame(width: 14, height: 14)
+                }
+                .accessibilityLabel("Refresh audio apps")
+
+                InteractiveButton(
+                    helpText: "Reset all volumes to 100%.\n100% uses the least energy.",
+                    action: store.resetAllVolumes
+                ) {
+                    Image(systemName: "arrow.uturn.backward")
+                        .frame(width: 14, height: 14)
+                }
+                .accessibilityLabel("Reset all apps to 100%")
             }
-            .buttonStyle(.plain)
-            .help(
-                "Reset every app to 100% and unmute. "
-                    + "At 100%, audio passes through without processing and uses the least energy."
-            )
-            .accessibilityLabel("Reset all apps to 100%")
-            Button {
-                store.manualRefresh()
-            } label: {
-                Image(systemName: "arrow.clockwise")
-            }
-            .buttonStyle(.plain)
-            .help("Refresh")
         }
-        .padding(12)
+        .padding(.leading, 12)
+        .padding(.vertical, 9)
+        .padding(.trailing, 16)
     }
 
     private func errorBanner(_ message: String) -> some View {
@@ -86,8 +89,12 @@ struct QuickMixerView: View {
                 .font(.caption)
                 .textSelection(.enabled)
             Spacer(minLength: 4)
-            Button("Retry") {
-                store.retry()
+            InteractiveButton(
+                helpText: "Retry audio setup.",
+                contentPadding: EdgeInsets(top: 3, leading: 6, bottom: 3, trailing: 6),
+                action: store.retry
+            ) {
+                Text("Retry")
             }
             .controlSize(.small)
         }
@@ -101,10 +108,13 @@ struct QuickMixerView: View {
                 .font(.caption2)
                 .foregroundStyle(.tertiary)
             Spacer()
-            Button("Quit") {
-                store.quit()
+            InteractiveButton(
+                helpText: "Quit dBDeck.",
+                contentPadding: EdgeInsets(top: 4, leading: 7, bottom: 4, trailing: 7),
+                action: store.quit
+            ) {
+                Text("Quit")
             }
-            .buttonStyle(.plain)
         }
         .padding(12)
     }
