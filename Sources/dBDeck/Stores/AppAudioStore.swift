@@ -6,8 +6,9 @@ import OSLog
 @MainActor
 final class AppAudioStore: ObservableObject {
     @Published private(set) var apps: [AudioApp] = []
-    @Published private(set) var settings: [String: AppVolumeSetting]
     @Published var errorMessage: String?
+
+    private(set) var settings: [String: AppVolumeSetting]
 
     private let discovery = AudioProcessDiscovery()
     private let preferences: VolumePreferences
@@ -17,10 +18,21 @@ final class AppAudioStore: ObservableObject {
     private var audioMonitor: AudioActivityMonitor?
     private var fallbackTimer: Timer?
     private var playbackCheckpointTimer: Timer?
+    private var preferencesSaveTimer: Timer?
+    private var settingsNeedSave = false
     private var workspaceObservers: [NSObjectProtocol] = []
     private var runningApplicationBundleIDsByPID: [pid_t: String] = [:]
     private var currentPlaybackObservations: [PlaybackObservation] = []
     private var lastPlaybackAccountingDate: Date?
+    private var volumeControls: [String: AppVolumeControl] = [:]
+    private var historicalMetadata: [String: HistoricalApplicationMetadata] = [:]
+    private var unavailableHistoricalBundleIDs = Set<String>()
+
+    private struct HistoricalApplicationMetadata {
+        let bundleURL: URL
+        let name: String
+        let icon: NSImage
+    }
 
     init(
         preferences: VolumePreferences = VolumePreferences(),
@@ -50,6 +62,7 @@ final class AppAudioStore: ObservableObject {
     deinit {
         fallbackTimer?.invalidate()
         playbackCheckpointTimer?.invalidate()
+        preferencesSaveTimer?.invalidate()
         let notificationCenter = NSWorkspace.shared.notificationCenter
         for observer in workspaceObservers {
             notificationCenter.removeObserver(observer)
@@ -63,6 +76,15 @@ final class AppAudioStore: ObservableObject {
 
     func setting(for app: AudioApp) -> AppVolumeSetting {
         settings[app.id] ?? .passthrough
+    }
+
+    func volumeControl(for app: AudioApp) -> AppVolumeControl {
+        if let control = volumeControls[app.id] {
+            return control
+        }
+        let control = AppVolumeControl(setting: setting(for: app))
+        volumeControls[app.id] = control
+        return control
     }
 
     func setVolume(_ volume: Double, for app: AudioApp) {
@@ -85,6 +107,12 @@ final class AppAudioStore: ObservableObject {
     func retry() {
         errorMessage = nil
         engine.retryFailures()
+        unavailableHistoricalBundleIDs.removeAll()
+        refresh()
+    }
+
+    func manualRefresh() {
+        unavailableHistoricalBundleIDs.removeAll()
         refresh()
     }
 
@@ -94,13 +122,6 @@ final class AppAudioStore: ObservableObject {
             let activeApps = try discovery.activeApps()
             accountCurrentPlayback(until: now)
 
-            let activeAppsByBundleID = Dictionary(
-                uniqueKeysWithValues: activeApps.compactMap { app in
-                    app.bundleID.map { ($0, app) }
-                }
-            )
-            let activeBundleIDs = Set(activeAppsByBundleID.keys)
-            let runningBundleIDs = Set(runningApplicationBundleIDsByPID.values)
             let observations = activeApps.compactMap { app -> PlaybackObservation? in
                 guard let bundleID = app.bundleID else { return nil }
                 return PlaybackObservation(
@@ -117,22 +138,7 @@ final class AppAudioStore: ObservableObject {
             currentPlaybackObservations = observations
             lastPlaybackAccountingDate = observations.isEmpty ? nil : now
             updatePlaybackCheckpointTimer()
-
-            let refreshedApps = playbackHistory
-                .prioritizedRecords(
-                    playingBundleIDs: activeBundleIDs,
-                    runningBundleIDs: runningBundleIDs
-                )
-                .compactMap { record in
-                    if let activeApp = activeAppsByBundleID[record.bundleID] {
-                        return activeApp
-                    }
-                    return historicalAudioApp(
-                        from: record,
-                        isRunning: runningBundleIDs.contains(record.bundleID)
-                    )
-                }
-            publishAppsIfChanged(refreshedApps)
+            rebuildVisibleApps(activeApps: activeApps)
             engine.retainOnly(appIDs: Set(activeApps.map(\.id)))
 
             var firstError: String?
@@ -148,20 +154,23 @@ final class AppAudioStore: ObservableObject {
     }
 
     func quit() {
-        flushPlaybackHistory()
+        flushPendingState()
         engine.stopAll()
         NSApplication.shared.terminate(nil)
     }
 
-    func flushPlaybackHistory() {
+    func flushPendingState() {
         accountCurrentPlayback(until: Date())
+        persistSettings()
     }
 
     private func update(_ newSetting: AppVolumeSetting, for app: AudioApp) {
-        var updatedSettings = settings
-        updatedSettings[app.id] = newSetting.normalized
-        settings = updatedSettings
-        preferences.save(updatedSettings)
+        let normalizedSetting = newSetting.normalized
+        guard settings[app.id] != normalizedSetting else { return }
+        settings[app.id] = normalizedSetting
+        volumeControls[app.id]?.update(normalizedSetting)
+        settingsNeedSave = true
+        schedulePreferencesSave()
         if app.isPlaying, let message = engine.apply(newSetting, to: app) {
             setErrorMessage("\(app.name): \(message)")
         } else {
@@ -240,16 +249,39 @@ final class AppAudioStore: ObservableObject {
             return
         }
         runningApplicationBundleIDsByPID[application.processIdentifier] = bundleID
+        unavailableHistoricalBundleIDs.remove(bundleID)
+        guard playbackHistory.containsRecord(for: bundleID) else { return }
         refresh()
     }
 
     private func applicationDidTerminate(_ application: NSRunningApplication) {
-        guard runningApplicationBundleIDsByPID.removeValue(
+        guard let bundleID = runningApplicationBundleIDsByPID.removeValue(
             forKey: application.processIdentifier
-        ) != nil else {
+        ) else {
             return
         }
+        guard playbackHistory.containsRecord(for: bundleID) else { return }
         refresh()
+    }
+
+    private func schedulePreferencesSave() {
+        preferencesSaveTimer?.invalidate()
+        preferencesSaveTimer = Timer.scheduledTimer(
+            withTimeInterval: 0.25,
+            repeats: false
+        ) { [weak self] _ in
+            Task { @MainActor in
+                self?.persistSettings()
+            }
+        }
+    }
+
+    private func persistSettings() {
+        preferencesSaveTimer?.invalidate()
+        preferencesSaveTimer = nil
+        guard settingsNeedSave else { return }
+        settingsNeedSave = false
+        preferences.save(settings)
     }
 
     private func accountCurrentPlayback(until now: Date) {
@@ -302,6 +334,31 @@ final class AppAudioStore: ObservableObject {
         apps = refreshedApps
     }
 
+    private func rebuildVisibleApps(activeApps: [AudioApp]) {
+        let activeAppsByBundleID = Dictionary(
+            uniqueKeysWithValues: activeApps.compactMap { app in
+                app.bundleID.map { ($0, app) }
+            }
+        )
+        let activeBundleIDs = Set(activeAppsByBundleID.keys)
+        let runningBundleIDs = Set(runningApplicationBundleIDsByPID.values)
+        let refreshedApps = playbackHistory
+            .prioritizedRecords(
+                playingBundleIDs: activeBundleIDs,
+                runningBundleIDs: runningBundleIDs
+            )
+            .compactMap { record in
+                if let activeApp = activeAppsByBundleID[record.bundleID] {
+                    return activeApp
+                }
+                return historicalAudioApp(
+                    from: record,
+                    isRunning: runningBundleIDs.contains(record.bundleID)
+                )
+            }
+        publishAppsIfChanged(refreshedApps)
+    }
+
     private static func sameVisibleState(_ lhs: [AudioApp], _ rhs: [AudioApp]) -> Bool {
         guard lhs.count == rhs.count else { return false }
         return zip(lhs, rhs).allSatisfy { left, right in
@@ -325,22 +382,52 @@ final class AppAudioStore: ObservableObject {
         from record: AppPlaybackRecord,
         isRunning: Bool
     ) -> AudioApp? {
-        guard let bundleURL = installedApplicationURL(for: record) else {
+        guard let metadata = historicalApplicationMetadata(for: record) else {
             return nil
         }
-        let icon = NSWorkspace.shared.icon(forFile: bundleURL.path)
 
         return AudioApp(
             id: record.bundleID,
             bundleID: record.bundleID,
-            name: ApplicationDisplayNameResolver.name(for: bundleURL),
-            icon: icon,
-            bundleURL: bundleURL,
+            name: metadata.name,
+            icon: metadata.icon,
+            bundleURL: metadata.bundleURL,
             processIDs: [],
             processIdentifiers: [],
             isPlaying: false,
             isRunning: isRunning
         )
+    }
+
+    private func historicalApplicationMetadata(
+        for record: AppPlaybackRecord
+    ) -> HistoricalApplicationMetadata? {
+        guard !unavailableHistoricalBundleIDs.contains(record.bundleID) else {
+            return nil
+        }
+        if let cached = historicalMetadata[record.bundleID],
+           isAvailableApplicationURL(cached.bundleURL) {
+            return cached
+        }
+        historicalMetadata[record.bundleID] = nil
+
+        guard let bundleURL = installedApplicationURL(for: record) else {
+            unavailableHistoricalBundleIDs.insert(record.bundleID)
+            return nil
+        }
+        let metadata = HistoricalApplicationMetadata(
+            bundleURL: bundleURL,
+            name: ApplicationDisplayNameResolver.name(for: bundleURL),
+            icon: NSWorkspace.shared.icon(forFile: bundleURL.path)
+        )
+        historicalMetadata[record.bundleID] = metadata
+        return metadata
+    }
+
+    private func isAvailableApplicationURL(_ url: URL) -> Bool {
+        let path = url.standardizedFileURL.path
+        return !path.contains("/.Trash/")
+            && FileManager.default.fileExists(atPath: path)
     }
 
     private func installedApplicationURL(for record: AppPlaybackRecord) -> URL? {
@@ -352,9 +439,7 @@ final class AppAudioStore: ObservableObject {
         return [currentURL, storedURL]
             .compactMap { $0 }
             .first { url in
-                let path = url.standardizedFileURL.path
-                guard !path.contains("/.Trash/"),
-                      FileManager.default.fileExists(atPath: path),
+                guard isAvailableApplicationURL(url),
                       let bundle = Bundle(url: url)
                 else {
                     return false

@@ -19,6 +19,7 @@ pkill -x dBDeck >/dev/null 2>&1 || true
 swiftc \
   -module-cache-path "$VERIFY_DIR/module-cache" \
   "$ROOT_DIR/Sources/dBDeck/Models/AppVolumeSetting.swift" \
+  "$ROOT_DIR/Sources/dBDeck/Models/AppVolumeControl.swift" \
   "$ROOT_DIR/Sources/dBDeck/Stores/VolumePreferences.swift" \
   "$ROOT_DIR/Tests/dBDeckTests/VolumePreferencesTests.swift" \
   -o "$VERIFY_BINARY"

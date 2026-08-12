@@ -2,11 +2,9 @@ import SwiftUI
 
 struct AppVolumeRow: View {
     let app: AudioApp
-    @ObservedObject var store: AppAudioStore
-
-    private var setting: AppVolumeSetting {
-        store.setting(for: app)
-    }
+    @ObservedObject var control: AppVolumeControl
+    let onVolumeChange: (Double) -> Void
+    let onToggleMute: () -> Void
 
     var body: some View {
         HStack(spacing: 10) {
@@ -47,7 +45,7 @@ struct AppVolumeRow: View {
 
                 HStack(spacing: 8) {
                     Button {
-                        store.toggleMute(for: app)
+                        onToggleMute()
                     } label: {
                         Image(systemName: setting.isMuted ? "speaker.slash.fill" : "speaker.wave.1.fill")
                             .frame(width: 16)
@@ -57,8 +55,8 @@ struct AppVolumeRow: View {
 
                     Slider(
                         value: Binding(
-                            get: { setting.volume },
-                            set: { store.setVolume($0, for: app) }
+                            get: { control.setting.volume },
+                            set: { onVolumeChange($0) }
                         ),
                         in: 0...1
                     )
@@ -73,5 +71,9 @@ struct AppVolumeRow: View {
         if app.isPlaying { return "Playing" }
         if app.isRunning { return "Running" }
         return nil
+    }
+
+    private var setting: AppVolumeSetting {
+        control.setting
     }
 }

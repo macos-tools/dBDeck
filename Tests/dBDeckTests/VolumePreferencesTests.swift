@@ -1,3 +1,4 @@
+import Combine
 import Foundation
 
 enum VerificationFailure: Error {
@@ -10,6 +11,7 @@ enum VolumePreferencesVerifier {
         try verifySaveAndLoad()
         try verifyNormalization()
         try verifyPassthroughBoundary()
+        try verifyPerAppControlUpdates()
         print("VolumePreferences verification passed")
     }
 
@@ -49,6 +51,33 @@ enum VolumePreferencesVerifier {
         }
         guard AppVolumeSetting(volume: 1, isMuted: true).needsProcessing else {
             throw VerificationFailure.failed("Muted audio incorrectly used passthrough")
+        }
+    }
+
+    @MainActor
+    private static func verifyPerAppControlUpdates() throws {
+        let control = AppVolumeControl(setting: .passthrough)
+        let unrelatedControl = AppVolumeControl(setting: .passthrough)
+        var updateCount = 0
+        var unrelatedUpdateCount = 0
+        let updateObservation = control.objectWillChange.sink {
+            updateCount += 1
+        }
+        let unrelatedObservation = unrelatedControl.objectWillChange.sink {
+            unrelatedUpdateCount += 1
+        }
+        defer {
+            updateObservation.cancel()
+            unrelatedObservation.cancel()
+        }
+
+        let adjusted = AppVolumeSetting(volume: 0.42, isMuted: false)
+        control.update(adjusted)
+        guard control.setting == adjusted,
+              updateCount == 1,
+              unrelatedUpdateCount == 0
+        else {
+            throw VerificationFailure.failed("Per-app control updates were not isolated")
         }
     }
 }

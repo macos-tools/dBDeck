@@ -32,6 +32,11 @@ enum PlaybackHistoryStoreVerifier {
         guard store.records.count == 2 else {
             throw PlaybackHistoryVerificationFailure.failed("Played apps were not retained")
         }
+        guard store.containsRecord(for: music.bundleID),
+              !store.containsRecord(for: "com.example.missing")
+        else {
+            throw PlaybackHistoryVerificationFailure.failed("History lookup was incorrect")
+        }
         guard store.records.first(where: { $0.bundleID == music.bundleID })?.playbackMinutes == 0 else {
             throw PlaybackHistoryVerificationFailure.failed("Sub-minute playback was rounded too early")
         }

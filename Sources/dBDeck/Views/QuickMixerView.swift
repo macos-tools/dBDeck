@@ -24,7 +24,12 @@ struct QuickMixerView: View {
                 ScrollView {
                     LazyVStack(spacing: 2) {
                         ForEach(store.apps) { app in
-                            AppVolumeRow(app: app, store: store)
+                            AppVolumeRow(
+                                app: app,
+                                control: store.volumeControl(for: app),
+                                onVolumeChange: { store.setVolume($0, for: app) },
+                                onToggleMute: { store.toggleMute(for: app) }
+                            )
                             if app.id != store.apps.last?.id {
                                 Divider().padding(.leading, 38)
                             }
@@ -52,7 +57,7 @@ struct QuickMixerView: View {
             }
             Spacer()
             Button {
-                store.refresh()
+                store.manualRefresh()
             } label: {
                 Image(systemName: "arrow.clockwise")
             }

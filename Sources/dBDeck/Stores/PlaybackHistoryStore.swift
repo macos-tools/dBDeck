@@ -19,6 +19,10 @@ final class PlaybackHistoryStore {
         Array(recordsByBundleID.values)
     }
 
+    func containsRecord(for bundleID: String) -> Bool {
+        recordsByBundleID[bundleID] != nil
+    }
+
     func observe(
         _ observations: [PlaybackObservation],
         elapsed: TimeInterval,
