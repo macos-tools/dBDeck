@@ -41,6 +41,16 @@ struct ApplicationDisplayNameResolverTests {
         #expect(ApplicationDisplayNameResolver.name(for: applicationURL) == "Example App")
     }
 
+    @Test func resolvesOutermostContainingApplication() {
+        let nestedHelper = URL(
+            fileURLWithPath: "/Applications/Browser.app/Contents/Frameworks/Helper.app"
+        )
+        #expect(
+            ApplicationBundleResolver.outermostApplicationURL(containing: nestedHelper)?.path
+                == "/Applications/Browser.app"
+        )
+    }
+
     private func propertyListData(_ propertyList: [String: String]) throws -> Data {
         try PropertyListSerialization.data(
             fromPropertyList: propertyList,

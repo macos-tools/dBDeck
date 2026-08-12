@@ -15,7 +15,14 @@ APP_RESOURCES="$APP_CONTENTS/Resources"
 APP_BINARY="$APP_MACOS/$APP_NAME"
 INFO_PLIST="$APP_CONTENTS/Info.plist"
 
-pkill -x "$APP_NAME" >/dev/null 2>&1 || true
+case "$MODE" in
+  run|--debug|debug|--logs|logs|--telemetry|telemetry|--verify|verify|--stage|stage)
+    ;;
+  *)
+    echo "usage: $0 [run|--debug|--logs|--telemetry|--verify|--stage]" >&2
+    exit 2
+    ;;
+esac
 
 cd "$ROOT_DIR"
 swift build --disable-sandbox --product "$APP_NAME"
@@ -63,6 +70,7 @@ PLIST
 codesign --force --sign - --entitlements "$ROOT_DIR/Resources/dBDeck.entitlements" "$APP_BUNDLE"
 
 open_app() {
+  pkill -x "$APP_NAME" >/dev/null 2>&1 || true
   /usr/bin/open -n "$APP_BUNDLE"
 }
 
@@ -71,6 +79,7 @@ case "$MODE" in
     open_app
     ;;
   --debug|debug)
+    pkill -x "$APP_NAME" >/dev/null 2>&1 || true
     lldb -- "$APP_BINARY"
     ;;
   --logs|logs)
@@ -89,9 +98,5 @@ case "$MODE" in
     echo "$APP_NAME is running (PID $APP_PID)"
     ;;
   --stage|stage)
-    ;;
-  *)
-    echo "usage: $0 [run|--debug|--logs|--telemetry|--verify|--stage]" >&2
-    exit 2
     ;;
 esac
