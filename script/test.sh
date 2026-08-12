@@ -7,6 +7,7 @@ VERIFY_BINARY="$VERIFY_DIR/verify-volume-preferences"
 DSP_VERIFY_BINARY="$VERIFY_DIR/verify-audio-dsp"
 DISCOVERY_VERIFY_BINARY="$VERIFY_DIR/verify-audio-discovery"
 HISTORY_VERIFY_BINARY="$VERIFY_DIR/verify-playback-history"
+DISPLAY_NAME_VERIFY_BINARY="$VERIFY_DIR/verify-application-display-name"
 FIXTURE_NAME="dBDeckAudioFixture"
 FIXTURE_BUNDLE_ID="com.dbdeck.tests.audio-fixture"
 FIXTURE_BUNDLE="$VERIFY_DIR/$FIXTURE_NAME.app"
@@ -33,6 +34,14 @@ swiftc \
 
 "$HISTORY_VERIFY_BINARY"
 
+swiftc \
+  -module-cache-path "$VERIFY_DIR/module-cache" \
+  "$ROOT_DIR/Sources/dBDeck/Support/ApplicationDisplayNameResolver.swift" \
+  "$ROOT_DIR/Tests/dBDeckTests/ApplicationDisplayNameResolverTests.swift" \
+  -o "$DISPLAY_NAME_VERIFY_BINARY"
+
+"$DISPLAY_NAME_VERIFY_BINARY"
+
 clang \
   -std=c11 \
   -I "$ROOT_DIR/Sources/AudioDSP/include" \
@@ -50,6 +59,7 @@ swiftc \
   "$ROOT_DIR/Sources/dBDeck/Models/ApplicationIdentity.swift" \
   "$ROOT_DIR/Sources/dBDeck/Models/AudioApp.swift" \
   "$ROOT_DIR/Sources/dBDeck/Support/CoreAudioSupport.swift" \
+  "$ROOT_DIR/Sources/dBDeck/Support/ApplicationDisplayNameResolver.swift" \
   "$ROOT_DIR/Sources/dBDeck/Services/ApplicationIdentityResolver.swift" \
   "$ROOT_DIR/Sources/dBDeck/Services/AudioProcessDiscovery.swift" \
   "$ROOT_DIR/Tests/dBDeckTests/AudioDiscoveryVerifier.swift" \

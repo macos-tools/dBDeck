@@ -113,9 +113,6 @@ final class PlaybackHistoryStore {
             if lhs.playbackMinutes != rhs.playbackMinutes {
                 return lhs.playbackMinutes > rhs.playbackMinutes
             }
-            if lhs.lastPlayedAt != rhs.lastPlayedAt {
-                return lhs.lastPlayedAt > rhs.lastPlayedAt
-            }
             return lhs.name.localizedCaseInsensitiveCompare(rhs.name) == .orderedAscending
         }
     }

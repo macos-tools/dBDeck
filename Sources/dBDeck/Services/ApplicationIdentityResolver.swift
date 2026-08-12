@@ -67,10 +67,7 @@ struct ApplicationIdentityResolver {
             return nil
         }
 
-        let info = bundle.localizedInfoDictionary ?? bundle.infoDictionary ?? [:]
-        let name = (info["CFBundleDisplayName"] as? String)
-            ?? (info["CFBundleName"] as? String)
-            ?? applicationURL.deletingPathExtension().lastPathComponent
+        let name = ApplicationDisplayNameResolver.name(for: applicationURL)
         let icon = NSWorkspace.shared.icon(forFile: applicationURL.path)
         return ApplicationIdentity(
             bundleID: bundleID,

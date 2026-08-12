@@ -39,10 +39,6 @@ final class AppAudioStore: ObservableObject {
         apps.contains { setting(for: $0).needsProcessing }
     }
 
-    var priorityApps: [AudioApp] {
-        Array(apps.prefix(5))
-    }
-
     func setting(for app: AudioApp) -> AppVolumeSetting {
         settings[app.id] ?? .passthrough
     }
@@ -159,7 +155,7 @@ final class AppAudioStore: ObservableObject {
         return AudioApp(
             id: record.bundleID,
             bundleID: record.bundleID,
-            name: record.name,
+            name: ApplicationDisplayNameResolver.name(for: bundleURL),
             icon: icon,
             bundleURL: bundleURL,
             processIDs: [],

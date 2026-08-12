@@ -77,6 +77,16 @@ enum PlaybackHistoryStoreVerifier {
             )
         }
 
+        let durationRanked = reloaded.prioritizedRecords(
+            playingBundleIDs: [],
+            runningBundleIDs: []
+        )
+        guard durationRanked.map(\.bundleID) == [music.bundleID, browser.bundleID, historyOnly.bundleID] else {
+            throw PlaybackHistoryVerificationFailure.failed(
+                "Playback duration did not outrank recency within the same activity tier"
+            )
+        }
+
         try verifyNestedHelperMigration()
 
         print("PlaybackHistory minute persistence and ranking verification passed")

@@ -13,7 +13,7 @@ struct QuickMixerView: View {
                 Divider()
             }
 
-            if store.priorityApps.isEmpty {
+            if store.apps.isEmpty {
                 ContentUnavailableView(
                     "No Playback History",
                     systemImage: "speaker.wave.2",
@@ -23,9 +23,9 @@ struct QuickMixerView: View {
             } else {
                 ScrollView {
                     LazyVStack(spacing: 2) {
-                        ForEach(store.priorityApps) { app in
+                        ForEach(store.apps) { app in
                             AppVolumeRow(app: app, store: store)
-                            if app.id != store.priorityApps.last?.id {
+                            if app.id != store.apps.last?.id {
                                 Divider().padding(.leading, 38)
                             }
                         }
@@ -46,7 +46,7 @@ struct QuickMixerView: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text("dBDeck")
                     .font(.headline)
-                Text("Playing and recent apps")
+                Text("Playing, running, and playback history")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
