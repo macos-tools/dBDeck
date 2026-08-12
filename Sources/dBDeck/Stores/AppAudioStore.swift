@@ -13,6 +13,7 @@ final class AppAudioStore: ObservableObject {
     private let discovery = AudioProcessDiscovery()
     private let preferences: VolumePreferences
     private let playbackHistory: PlaybackHistoryStore
+    private let historicalApplications = HistoricalApplicationResolver()
     private let engine = AppAudioEngine()
     private let logger = Logger(subsystem: "com.dbdeck.mac", category: "Energy")
     private var audioMonitor: AudioActivityMonitor?
@@ -25,16 +26,8 @@ final class AppAudioStore: ObservableObject {
     private var currentPlaybackObservations: [PlaybackObservation] = []
     private var lastPlaybackAccountingDate: Date?
     private var volumeControls: [String: AppVolumeControl] = [:]
-    private var historicalMetadata: [String: HistoricalApplicationMetadata] = [:]
-    private var unavailableHistoricalBundleIDs = Set<String>()
     private var operationErrorMessage: String?
     private var routeErrorsByAppID: [String: String] = [:]
-
-    private struct HistoricalApplicationMetadata {
-        let bundleURL: URL
-        let name: String
-        let icon: NSImage
-    }
 
     init(
         preferences: VolumePreferences = VolumePreferences(),
@@ -69,10 +62,6 @@ final class AppAudioStore: ObservableObject {
             notificationCenter.removeObserver(observer)
         }
         engine.stopAll()
-    }
-
-    var hasAdjustedApps: Bool {
-        apps.contains { setting(for: $0).needsProcessing }
     }
 
     func setting(for app: AudioApp) -> AppVolumeSetting {
@@ -115,21 +104,16 @@ final class AppAudioStore: ObservableObject {
         publishErrorMessage()
     }
 
-    func playbackMinutes(for app: AudioApp) -> Int {
-        playbackHistory.records.first(where: { $0.bundleID == app.bundleID })?
-            .playbackMinutes ?? 0
-    }
-
     func retry() {
         operationErrorMessage = nil
         routeErrorsByAppID.removeAll()
         engine.retryFailures()
-        unavailableHistoricalBundleIDs.removeAll()
+        historicalApplications.retryAllUnavailableApplications()
         refresh()
     }
 
     func manualRefresh() {
-        unavailableHistoricalBundleIDs.removeAll()
+        historicalApplications.retryAllUnavailableApplications()
         refresh()
     }
 
@@ -192,10 +176,9 @@ final class AppAudioStore: ObservableObject {
     private func refresh(activeApps: [AudioApp], now: Date) {
         accountCurrentPlayback(until: now)
 
-        let observations = activeApps.compactMap { app -> PlaybackObservation? in
-            guard let bundleID = app.bundleID else { return nil }
-            return PlaybackObservation(
-                bundleID: bundleID,
+        let observations = activeApps.map { app in
+            PlaybackObservation(
+                bundleID: app.bundleID,
                 name: app.name,
                 bundlePath: app.bundleURL?.path
             )
@@ -291,7 +274,7 @@ final class AppAudioStore: ObservableObject {
             return
         }
         runningApplicationBundleIDsByPID[application.processIdentifier] = bundleID
-        unavailableHistoricalBundleIDs.remove(bundleID)
+        historicalApplications.retryUnavailableApplication(bundleID: bundleID)
         guard playbackHistory.containsRecord(for: bundleID) else { return }
         refresh()
     }
@@ -378,9 +361,7 @@ final class AppAudioStore: ObservableObject {
 
     private func rebuildVisibleApps(activeApps: [AudioApp], now: Date) {
         let activeAppsByBundleID = Dictionary(
-            uniqueKeysWithValues: activeApps.compactMap { app in
-                app.bundleID.map { ($0, app) }
-            }
+            uniqueKeysWithValues: activeApps.map { ($0.bundleID, $0) }
         )
         let activeBundleIDs = Set(activeAppsByBundleID.keys)
         let runningBundleIDs = Set(runningApplicationBundleIDsByPID.values)
@@ -393,7 +374,7 @@ final class AppAudioStore: ObservableObject {
                 if let activeApp = activeAppsByBundleID[record.bundleID] {
                     return (record, activeApp)
                 }
-                guard let app = historicalAudioApp(
+                guard let app = historicalApplications.audioApp(
                     from: record,
                     isRunning: runningBundleIDs.contains(record.bundleID)
                 ) else {
@@ -425,7 +406,6 @@ final class AppAudioStore: ObservableObject {
                 && left.name == right.name
                 && left.bundleURL == right.bundleURL
                 && left.processIDs == right.processIDs
-                && left.processIdentifiers == right.processIdentifiers
                 && left.isPlaying == right.isPlaying
                 && left.isRunning == right.isRunning
         }
@@ -446,73 +426,4 @@ final class AppAudioStore: ObservableObject {
         setErrorMessage(orderedRouteError)
     }
 
-    private func historicalAudioApp(
-        from record: AppPlaybackRecord,
-        isRunning: Bool
-    ) -> AudioApp? {
-        guard let metadata = historicalApplicationMetadata(for: record) else {
-            return nil
-        }
-
-        return AudioApp(
-            id: record.bundleID,
-            bundleID: record.bundleID,
-            name: metadata.name,
-            icon: metadata.icon,
-            bundleURL: metadata.bundleURL,
-            processIDs: [],
-            processIdentifiers: [],
-            isPlaying: false,
-            isRunning: isRunning
-        )
-    }
-
-    private func historicalApplicationMetadata(
-        for record: AppPlaybackRecord
-    ) -> HistoricalApplicationMetadata? {
-        guard !unavailableHistoricalBundleIDs.contains(record.bundleID) else {
-            return nil
-        }
-        if let cached = historicalMetadata[record.bundleID],
-           isAvailableApplicationURL(cached.bundleURL) {
-            return cached
-        }
-        historicalMetadata[record.bundleID] = nil
-
-        guard let bundleURL = installedApplicationURL(for: record) else {
-            unavailableHistoricalBundleIDs.insert(record.bundleID)
-            return nil
-        }
-        let metadata = HistoricalApplicationMetadata(
-            bundleURL: bundleURL,
-            name: ApplicationDisplayNameResolver.name(for: bundleURL),
-            icon: NSWorkspace.shared.icon(forFile: bundleURL.path)
-        )
-        historicalMetadata[record.bundleID] = metadata
-        return metadata
-    }
-
-    private func isAvailableApplicationURL(_ url: URL) -> Bool {
-        let path = url.standardizedFileURL.path
-        return !path.contains("/.Trash/")
-            && FileManager.default.fileExists(atPath: path)
-    }
-
-    private func installedApplicationURL(for record: AppPlaybackRecord) -> URL? {
-        let currentURL = NSWorkspace.shared.urlForApplication(
-            withBundleIdentifier: record.bundleID
-        )
-        let storedURL = record.bundlePath.map { URL(fileURLWithPath: $0) }
-
-        return [currentURL, storedURL]
-            .compactMap { $0 }
-            .first { url in
-                guard isAvailableApplicationURL(url),
-                      let bundle = Bundle(url: url)
-                else {
-                    return false
-                }
-                return bundle.bundleIdentifier == record.bundleID
-            }
-    }
 }

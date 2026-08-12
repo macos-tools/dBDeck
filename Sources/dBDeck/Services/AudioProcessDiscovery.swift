@@ -11,7 +11,6 @@ struct AudioProcessDiscovery {
 
     private struct ProcessRecord {
         let audioObjectID: AudioObjectID
-        let pid: pid_t
         let identity: ApplicationIdentity
 
         var stableID: String {
@@ -39,22 +38,19 @@ struct AudioProcessDiscovery {
 
             return ProcessRecord(
                 audioObjectID: process.audioObjectID,
-                pid: process.pid,
                 identity: identity
             )
         }
 
         return Dictionary(grouping: records, by: \.stableID)
-            .map { stableID, group in
+            .map { _, group in
                 let identity = group[0].identity
                 return AudioApp(
-                    id: stableID,
                     bundleID: identity.bundleID,
                     name: identity.name,
                     icon: identity.icon,
                     bundleURL: identity.bundleURL,
                     processIDs: group.map(\.audioObjectID).sorted(),
-                    processIdentifiers: group.map(\.pid).sorted(),
                     isPlaying: true,
                     isRunning: true
                 )

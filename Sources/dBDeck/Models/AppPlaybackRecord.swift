@@ -27,22 +27,6 @@ struct AppPlaybackRecord: Codable, Equatable, Identifiable {
         self.lastPlayedAt = lastPlayedAt
     }
 
-    init(
-        bundleID: String,
-        name: String,
-        bundlePath: String?,
-        playbackMinutes: Int,
-        lastPlayedAt: Date
-    ) {
-        self.init(
-            bundleID: bundleID,
-            name: name,
-            bundlePath: bundlePath,
-            playbackSeconds: Double(playbackMinutes * 60),
-            lastPlayedAt: lastPlayedAt
-        )
-    }
-
     private enum CodingKeys: String, CodingKey {
         case bundleID
         case name

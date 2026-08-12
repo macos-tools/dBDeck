@@ -29,6 +29,8 @@ swiftc \
 swiftc \
   -module-cache-path "$VERIFY_DIR/module-cache" \
   "$ROOT_DIR/Sources/dBDeck/Models/AppPlaybackRecord.swift" \
+  "$ROOT_DIR/Sources/dBDeck/Support/ApplicationBundleResolver.swift" \
+  "$ROOT_DIR/Sources/dBDeck/Support/ApplicationDisplayNameResolver.swift" \
   "$ROOT_DIR/Sources/dBDeck/Stores/PlaybackHistoryStore.swift" \
   "$ROOT_DIR/Tests/dBDeckTests/PlaybackHistoryStoreTests.swift" \
   -o "$HISTORY_VERIFY_BINARY"
@@ -60,6 +62,7 @@ swiftc \
   "$ROOT_DIR/Sources/dBDeck/Models/ApplicationIdentity.swift" \
   "$ROOT_DIR/Sources/dBDeck/Models/AudioApp.swift" \
   "$ROOT_DIR/Sources/dBDeck/Support/CoreAudioSupport.swift" \
+  "$ROOT_DIR/Sources/dBDeck/Support/ApplicationBundleResolver.swift" \
   "$ROOT_DIR/Sources/dBDeck/Support/ApplicationDisplayNameResolver.swift" \
   "$ROOT_DIR/Sources/dBDeck/Services/ApplicationIdentityResolver.swift" \
   "$ROOT_DIR/Sources/dBDeck/Services/AudioProcessDiscovery.swift" \

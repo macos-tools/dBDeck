@@ -2,17 +2,13 @@ import AppKit
 import CoreAudio
 
 struct AudioApp: Identifiable {
-    let id: String
-    let bundleID: String?
+    var id: String { bundleID }
+
+    let bundleID: String
     let name: String
-    let icon: NSImage?
+    let icon: NSImage
     let bundleURL: URL?
     let processIDs: [AudioObjectID]
-    let processIdentifiers: [pid_t]
     let isPlaying: Bool
     let isRunning: Bool
-
-    var supportsPersistence: Bool {
-        bundleID != nil
-    }
 }

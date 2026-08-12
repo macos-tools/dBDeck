@@ -8,18 +8,9 @@ struct AppVolumeRow: View {
 
     var body: some View {
         HStack(spacing: 10) {
-            Group {
-                if let icon = app.icon {
-                    Image(nsImage: icon)
-                        .resizable()
-                        .scaledToFit()
-                } else {
-                    Image(systemName: "app.dashed")
-                        .resizable()
-                        .scaledToFit()
-                        .foregroundStyle(.secondary)
-                }
-            }
+            Image(nsImage: app.icon)
+                .resizable()
+                .scaledToFit()
             .frame(width: 28, height: 28)
 
             VStack(alignment: .leading, spacing: 5) {

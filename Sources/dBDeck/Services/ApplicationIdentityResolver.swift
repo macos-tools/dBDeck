@@ -59,8 +59,8 @@ struct ApplicationIdentityResolver {
     }
 
     private func identity(forApplicationURL url: URL) -> ApplicationIdentity? {
-        let applicationURL = outermostApplicationURL(containing: url)
-        guard applicationURL.pathExtension.caseInsensitiveCompare("app") == .orderedSame,
+        guard let applicationURL = ApplicationBundleResolver
+            .outermostApplicationURL(containing: url),
               let bundle = Bundle(url: applicationURL),
               let bundleID = bundle.bundleIdentifier
         else {
@@ -75,21 +75,6 @@ struct ApplicationIdentityResolver {
             icon: icon,
             bundleURL: applicationURL
         )
-    }
-
-    private func outermostApplicationURL(containing url: URL) -> URL {
-        var candidate = url.standardizedFileURL
-        var current = candidate
-
-        for _ in 0..<32 {
-            if current.pathExtension.caseInsensitiveCompare("app") == .orderedSame {
-                candidate = current
-            }
-            let parent = current.deletingLastPathComponent()
-            guard parent.path.count < current.path.count else { break }
-            current = parent
-        }
-        return candidate
     }
 
     private func parentApplicationIdentity(

@@ -217,19 +217,9 @@ final class PlaybackHistoryStore {
     ) -> AppPlaybackRecord {
         guard let bundlePath = record.bundlePath else { return record }
         let originalURL = URL(fileURLWithPath: bundlePath).standardizedFileURL
-        var applicationURL = originalURL
-        var current = originalURL
-
-        for _ in 0..<32 {
-            if current.pathExtension.caseInsensitiveCompare("app") == .orderedSame {
-                applicationURL = current
-            }
-            let parent = current.deletingLastPathComponent()
-            guard parent.path.count < current.path.count else { break }
-            current = parent
-        }
-
         guard
+            let applicationURL = ApplicationBundleResolver
+                .outermostApplicationURL(containing: originalURL),
             applicationURL != originalURL,
             let bundle = Bundle(url: applicationURL),
             let bundleID = bundle.bundleIdentifier
@@ -237,13 +227,9 @@ final class PlaybackHistoryStore {
             return record
         }
 
-        let info = bundle.localizedInfoDictionary ?? bundle.infoDictionary ?? [:]
-        let name = (info["CFBundleDisplayName"] as? String)
-            ?? (info["CFBundleName"] as? String)
-            ?? applicationURL.deletingPathExtension().lastPathComponent
         return AppPlaybackRecord(
             bundleID: bundleID,
-            name: name,
+            name: ApplicationDisplayNameResolver.name(for: applicationURL),
             bundlePath: applicationURL.path,
             playbackSeconds: record.playbackSeconds,
             lastPlayedAt: record.lastPlayedAt
