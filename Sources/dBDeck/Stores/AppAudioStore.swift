@@ -83,6 +83,12 @@ final class AppAudioStore: ObservableObject {
                 }
             )
             let activeBundleIDs = Set(activeAppsByBundleID.keys)
+            let runningBundleIDs: Set<String> = Set(
+                NSWorkspace.shared.runningApplications.compactMap { application -> String? in
+                    guard application.activationPolicy != .prohibited else { return nil }
+                    return application.bundleIdentifier
+                }
+            )
             playbackHistory.observe(
                 activeApps.compactMap { app in
                     guard let bundleID = app.bundleID else { return nil }
@@ -97,10 +103,18 @@ final class AppAudioStore: ObservableObject {
             )
 
             apps = playbackHistory
-                .prioritizedRecords(activeBundleIDs: activeBundleIDs)
-                .map { record in
-                    activeAppsByBundleID[record.bundleID]
-                        ?? historicalAudioApp(from: record)
+                .prioritizedRecords(
+                    playingBundleIDs: activeBundleIDs,
+                    runningBundleIDs: runningBundleIDs
+                )
+                .compactMap { record in
+                    if let activeApp = activeAppsByBundleID[record.bundleID] {
+                        return activeApp
+                    }
+                    return historicalAudioApp(
+                        from: record,
+                        isRunning: runningBundleIDs.contains(record.bundleID)
+                    )
                 }
             engine.retainOnly(appIDs: Set(activeApps.map(\.id)))
 
@@ -133,13 +147,14 @@ final class AppAudioStore: ObservableObject {
         }
     }
 
-    private func historicalAudioApp(from record: AppPlaybackRecord) -> AudioApp {
-        let storedURL = record.bundlePath.map { URL(fileURLWithPath: $0) }
-        let currentURL = NSWorkspace.shared.urlForApplication(
-            withBundleIdentifier: record.bundleID
-        )
-        let bundleURL = currentURL ?? storedURL
-        let icon = bundleURL.map { NSWorkspace.shared.icon(forFile: $0.path) }
+    private func historicalAudioApp(
+        from record: AppPlaybackRecord,
+        isRunning: Bool
+    ) -> AudioApp? {
+        guard let bundleURL = installedApplicationURL(for: record) else {
+            return nil
+        }
+        let icon = NSWorkspace.shared.icon(forFile: bundleURL.path)
 
         return AudioApp(
             id: record.bundleID,
@@ -149,7 +164,28 @@ final class AppAudioStore: ObservableObject {
             bundleURL: bundleURL,
             processIDs: [],
             processIdentifiers: [],
-            isPlaying: false
+            isPlaying: false,
+            isRunning: isRunning
         )
+    }
+
+    private func installedApplicationURL(for record: AppPlaybackRecord) -> URL? {
+        let currentURL = NSWorkspace.shared.urlForApplication(
+            withBundleIdentifier: record.bundleID
+        )
+        let storedURL = record.bundlePath.map { URL(fileURLWithPath: $0) }
+
+        return [currentURL, storedURL]
+            .compactMap { $0 }
+            .first { url in
+                let path = url.standardizedFileURL.path
+                guard !path.contains("/.Trash/"),
+                      FileManager.default.fileExists(atPath: path),
+                      let bundle = Bundle(url: url)
+                else {
+                    return false
+                }
+                return bundle.bundleIdentifier == record.bundleID
+            }
     }
 }

@@ -35,7 +35,7 @@ struct AppVolumeRow: View {
                     Text(app.name)
                         .lineLimit(1)
                     Spacer(minLength: 4)
-                    Text(app.isPlaying ? "Playing" : "\(store.playbackMinutes(for: app)) min")
+                    Text(activityLabel)
                         .font(.caption)
                         .foregroundStyle(app.isPlaying ? .green : .secondary)
                     Text(setting.isMuted ? "Muted" : "\(Int(setting.volume * 100))%")
@@ -65,5 +65,11 @@ struct AppVolumeRow: View {
             }
         }
         .padding(.vertical, 4)
+    }
+
+    private var activityLabel: String {
+        if app.isPlaying { return "Playing" }
+        if app.isRunning { return "Running · \(store.playbackMinutes(for: app)) min" }
+        return "\(store.playbackMinutes(for: app)) min"
     }
 }

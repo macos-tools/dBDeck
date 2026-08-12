@@ -43,6 +43,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             if ProcessInfo.processInfo.arguments.contains("--verify-popover") {
                 self?.statusItemController?.performStatusItemClickForVerification()
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in
+                    guard self?.statusItemController?.isStatusItemActuallyVisible == true else {
+                        fputs("Menu bar status item visibility verification failed\n", stderr)
+                        exit(EXIT_FAILURE)
+                    }
                     guard self?.statusItemController?.isPopoverShown == true else {
                         fputs("Menu bar button interaction verification failed\n", stderr)
                         exit(EXIT_FAILURE)

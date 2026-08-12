@@ -46,7 +46,7 @@ struct QuickMixerView: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text("dBDeck")
                     .font(.headline)
-                Text("Top apps by playback time")
+                Text("Playing and recent apps")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -81,7 +81,7 @@ struct QuickMixerView: View {
 
     private var footer: some View {
         HStack {
-            Text("Playing first · Top 5")
+            Text("Playing · Running · History · Top 5")
                 .font(.caption2)
                 .foregroundStyle(.tertiary)
             Spacer()

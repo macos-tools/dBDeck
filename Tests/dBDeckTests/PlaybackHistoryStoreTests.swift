@@ -53,9 +53,28 @@ enum PlaybackHistoryStoreVerifier {
             throw PlaybackHistoryVerificationFailure.failed("Playback history did not survive reload")
         }
 
-        let ranked = reloaded.prioritizedRecords(activeBundleIDs: [browser.bundleID])
+        let ranked = reloaded.prioritizedRecords(
+            playingBundleIDs: [browser.bundleID],
+            runningBundleIDs: [music.bundleID]
+        )
         guard ranked.map(\.bundleID) == [browser.bundleID, music.bundleID] else {
-            throw PlaybackHistoryVerificationFailure.failed("Active apps were not ranked first")
+            throw PlaybackHistoryVerificationFailure.failed("Playing apps were not ranked first")
+        }
+
+        let historyOnly = PlaybackObservation(
+            bundleID: "com.example.history",
+            name: "History",
+            bundlePath: "/Applications/Example History.app"
+        )
+        reloaded.observe([historyOnly], elapsed: 0, now: start.addingTimeInterval(120))
+        let tiered = reloaded.prioritizedRecords(
+            playingBundleIDs: [browser.bundleID],
+            runningBundleIDs: [music.bundleID]
+        )
+        guard tiered.map(\.bundleID) == [browser.bundleID, music.bundleID, historyOnly.bundleID] else {
+            throw PlaybackHistoryVerificationFailure.failed(
+                "Playing, running-history, and stopped-history tiers were not preserved"
+            )
         }
 
         try verifyNestedHelperMigration()

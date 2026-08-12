@@ -11,6 +11,8 @@ final class StatusItemController: NSObject {
     init(store: AppAudioStore) {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         super.init()
+        statusItem.autosaveName = "dBDeckStatusItem"
+        statusItem.isVisible = true
 
         if let button = statusItem.button {
             let image = NSImage(
@@ -19,6 +21,8 @@ final class StatusItemController: NSObject {
             )
             image?.isTemplate = true
             button.image = image
+            button.imagePosition = .imageOnly
+            button.imageScaling = .scaleProportionallyDown
             button.toolTip = "dBDeck"
             button.target = self
             button.action = #selector(togglePopover)
@@ -57,6 +61,18 @@ final class StatusItemController: NSObject {
     }
 
 #if DEBUG
+    var isStatusItemActuallyVisible: Bool {
+        guard statusItem.isVisible,
+              let button = statusItem.button,
+              !button.isHiddenOrHasHiddenAncestor,
+              let window = button.window,
+              window.isVisible
+        else {
+            return false
+        }
+        return NSScreen.screens.contains { $0.frame.intersects(window.frame) }
+    }
+
     func performStatusItemClickForVerification() {
         statusItem.button?.performClick(nil)
     }

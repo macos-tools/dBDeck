@@ -55,7 +55,8 @@ struct AudioProcessDiscovery {
                     bundleURL: identity.bundleURL,
                     processIDs: group.map(\.audioObjectID).sorted(),
                     processIdentifiers: group.map(\.pid).sorted(),
-                    isPlaying: true
+                    isPlaying: true,
+                    isRunning: true
                 )
             }
             .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }

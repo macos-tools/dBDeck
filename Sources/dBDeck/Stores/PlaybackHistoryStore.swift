@@ -92,12 +92,23 @@ final class PlaybackHistoryStore {
         }
     }
 
-    func prioritizedRecords(activeBundleIDs: Set<String>) -> [AppPlaybackRecord] {
+    func prioritizedRecords(
+        playingBundleIDs: Set<String>,
+        runningBundleIDs: Set<String>
+    ) -> [AppPlaybackRecord] {
         records.sorted { lhs, rhs in
-            let lhsIsActive = activeBundleIDs.contains(lhs.bundleID)
-            let rhsIsActive = activeBundleIDs.contains(rhs.bundleID)
-            if lhsIsActive != rhsIsActive {
-                return lhsIsActive
+            let lhsPriority = priority(
+                for: lhs.bundleID,
+                playingBundleIDs: playingBundleIDs,
+                runningBundleIDs: runningBundleIDs
+            )
+            let rhsPriority = priority(
+                for: rhs.bundleID,
+                playingBundleIDs: playingBundleIDs,
+                runningBundleIDs: runningBundleIDs
+            )
+            if lhsPriority != rhsPriority {
+                return lhsPriority < rhsPriority
             }
             if lhs.playbackMinutes != rhs.playbackMinutes {
                 return lhs.playbackMinutes > rhs.playbackMinutes
@@ -107,6 +118,16 @@ final class PlaybackHistoryStore {
             }
             return lhs.name.localizedCaseInsensitiveCompare(rhs.name) == .orderedAscending
         }
+    }
+
+    private func priority(
+        for bundleID: String,
+        playingBundleIDs: Set<String>,
+        runningBundleIDs: Set<String>
+    ) -> Int {
+        if playingBundleIDs.contains(bundleID) { return 0 }
+        if runningBundleIDs.contains(bundleID) { return 1 }
+        return 2
     }
 
     private static func load(

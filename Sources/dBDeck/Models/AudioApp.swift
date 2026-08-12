@@ -10,6 +10,7 @@ struct AudioApp: Identifiable {
     let processIDs: [AudioObjectID]
     let processIdentifiers: [pid_t]
     let isPlaying: Bool
+    let isRunning: Bool
 
     var supportsPersistence: Bool {
         bundleID != nil
