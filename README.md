@@ -1,18 +1,22 @@
 # dBDeck（音枢）
 
-dBDeck is a menu bar per-app audio controller for macOS 14.2 and later.
+dBDeck is a per-app audio controller for macOS. Its Control Center integration
+requires macOS 26 or later.
 
 ## Free MVP
 
-- Lists apps that are actively producing audio.
+- Remembers every identifiable app that has produced audio.
+- Ranks playing apps first, then ranks history by accumulated playback minutes.
+- Shows the five highest-priority apps in its quick mixer.
 - Adjusts each app from 0–100% without changing system volume.
 - Mutes and unmutes individual apps.
 - Remembers volume and mute state by bundle identifier.
-- Runs as a menu-bar-only app with no Dock icon.
+- Runs without a persistent menu bar or Dock icon.
 
-Launching the app opens its panel immediately. Opening it again, or clicking the
-speaker icon in the menu bar, reopens the same panel. Background daemons and raw
-process IDs are intentionally hidden; the list contains identifiable app bundles.
+The macOS 26 WidgetKit control uses a speaker icon in Control Center. Activating
+it opens the quick mixer near Control Center. Background daemons, nested helper
+apps, and raw process IDs are hidden or resolved to their containing application.
+Apps that have never produced audio do not appear.
 
 Audio stays on the Mac. dBDeck uses Apple's Core Audio Process Tap API, a private
 aggregate device, and a real-time gain callback. The first adjustment requires
@@ -41,14 +45,17 @@ Optional modes:
 ./script/test.sh
 ```
 
-This checks settings persistence, real-time gain/mute sample processing, and
-Core Audio discovery against a real audio-producing process.
+This checks settings persistence, minute-level playback history and ranking,
+real-time gain/mute sample processing, and Core Audio discovery against a real
+audio-producing app.
 
 To verify the complete signed Process Tap and aggregate-device route in a Debug
 build, run:
 
 ```sh
 ./script/verify_route.sh
+./script/verify_panel.sh
+./script/verify_control.sh
 ```
 
 macOS asks for System Audio Recording permission the first time this route runs.

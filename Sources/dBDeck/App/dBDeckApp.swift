@@ -1,17 +1,46 @@
 import AppKit
 import SwiftUI
+#if DEBUG
+import WidgetKit
+#endif
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var store: AppAudioStore?
-    private var statusItemController: StatusItemController?
+    private var mixerPanelController: MixerPanelController?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        ProcessInfo.processInfo.disableAutomaticTermination("dBDeck menu bar service")
+        ProcessInfo.processInfo.disableAutomaticTermination("dBDeck audio service")
         ProcessInfo.processInfo.disableSuddenTermination()
         NSApp.setActivationPolicy(.accessory)
 
 #if DEBUG
         let arguments = ProcessInfo.processInfo.arguments
+        if arguments.contains("--verify-control") {
+            if #available(macOS 26.0, *) {
+                Task {
+                    do {
+                        let controls = try await ControlCenter.shared.currentControls()
+                        guard controls.contains(where: {
+                            $0.kind == "com.dbdeck.app.control.mixer"
+                        }) else {
+                            fputs("Control Center configuration verification failed\n", stderr)
+                            exit(EXIT_FAILURE)
+                        }
+                        print("Control Center configuration verification passed")
+                        fflush(stdout)
+                        exit(EXIT_SUCCESS)
+                    } catch {
+                        fputs("Control Center verification failed: \(error.localizedDescription)\n", stderr)
+                        exit(EXIT_FAILURE)
+                    }
+                }
+            } else {
+                fputs("Control Center verification requires macOS 26\n", stderr)
+                exit(EXIT_FAILURE)
+            }
+            return
+        }
+
         if let flagIndex = arguments.firstIndex(of: "--verify-route") {
             let pidIndex = arguments.index(after: flagIndex)
             let pid = pidIndex < arguments.endIndex ? pid_t(arguments[pidIndex]) : nil
@@ -36,18 +65,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         let store = AppAudioStore()
         self.store = store
-        statusItemController = StatusItemController(store: store)
+        mixerPanelController = MixerPanelController(store: store)
 
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { [weak self] in
-            self?.statusItemController?.showPopover()
+            self?.mixerPanelController?.show()
 
 #if DEBUG
-            if ProcessInfo.processInfo.arguments.contains("--verify-popover") {
-                guard self?.statusItemController?.isPopoverShown == true else {
-                    fputs("Menu bar popover verification failed\n", stderr)
+            if ProcessInfo.processInfo.arguments.contains("--verify-panel") {
+                guard self?.mixerPanelController?.isVisible == true else {
+                    fputs("Quick mixer panel verification failed\n", stderr)
                     exit(EXIT_FAILURE)
                 }
-                print("Menu bar popover verification passed")
+                print("Quick mixer panel verification passed")
                 fflush(stdout)
                 exit(EXIT_SUCCESS)
             }
@@ -59,8 +88,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         _ sender: NSApplication,
         hasVisibleWindows flag: Bool
     ) -> Bool {
-        statusItemController?.showPopover()
+        mixerPanelController?.show()
         return true
+    }
+
+    func application(_ application: NSApplication, open urls: [URL]) {
+        guard urls.contains(where: { $0.scheme == "dbdeck" }) else { return }
+        mixerPanelController?.show()
     }
 }
 

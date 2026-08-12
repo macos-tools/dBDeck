@@ -1,6 +1,6 @@
 import SwiftUI
 
-struct MenuBarContentView: View {
+struct QuickMixerView: View {
     @ObservedObject var store: AppAudioStore
 
     var body: some View {
