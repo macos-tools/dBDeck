@@ -31,26 +31,7 @@ struct AudioProcessDiscovery: AudioProcessDiscovering {
     }
 
     func activeApps() throws -> [AudioApp] {
-        let runningApplications = Dictionary(
-            uniqueKeysWithValues: NSWorkspace.shared.runningApplications.map {
-                ($0.processIdentifier, $0)
-            }
-        )
-
-        let records = try activeProcesses().compactMap { process -> ProcessRecord? in
-            guard let identity = identityResolver.resolve(
-                pid: process.pid,
-                reportedBundleID: process.reportedBundleID,
-                runningApplications: runningApplications
-            ), !excludedBundleIDs.contains(identity.bundleID) else {
-                return nil
-            }
-
-            return ProcessRecord(
-                audioObjectID: process.audioObjectID,
-                identity: identity
-            )
-        }
+        let records = try resolvedProcessRecords()
 
         return Dictionary(grouping: records, by: \.stableID)
             .map { _, group in
@@ -76,19 +57,32 @@ struct AudioProcessDiscovery: AudioProcessDiscovering {
     }
 
     func activeProcessObjectIDs() throws -> [AudioObjectID] {
+        try resolvedProcessRecords()
+            .map(\.audioObjectID)
+            .sorted()
+    }
+
+    private func resolvedProcessRecords() throws -> [ProcessRecord] {
         let runningApplications = Dictionary(
             uniqueKeysWithValues: NSWorkspace.shared.runningApplications.map {
                 ($0.processIdentifier, $0)
             }
         )
-        return try activeProcesses().compactMap { process in
-            let runningBundleID = runningApplications[process.pid]?.bundleIdentifier
-            if process.reportedBundleID.map(excludedBundleIDs.contains) == true
-                || runningBundleID.map(excludedBundleIDs.contains) == true {
+
+        return try activeProcesses().compactMap { process -> ProcessRecord? in
+            guard let identity = identityResolver.resolve(
+                pid: process.pid,
+                reportedBundleID: process.reportedBundleID,
+                runningApplications: runningApplications
+            ), !excludedBundleIDs.contains(identity.bundleID) else {
                 return nil
             }
-            return process.audioObjectID
-        }.sorted()
+
+            return ProcessRecord(
+                audioObjectID: process.audioObjectID,
+                identity: identity
+            )
+        }
     }
 
     private func activeProcesses() throws -> [ActiveProcess] {
