@@ -39,12 +39,15 @@ struct dBDeckApp: App {
     @AppStorage("menuBarExtraInserted") private var isMenuBarExtraInserted = true
 
     var body: some Scene {
-        MenuBarExtra(
-            "dBDeck",
-            systemImage: "speaker.wave.2.fill",
-            isInserted: $isMenuBarExtraInserted
-        ) {
+        MenuBarExtra(isInserted: $isMenuBarExtraInserted) {
             QuickMixerView(store: store)
+        } label: {
+            Image("dBDeckMenuBarIcon")
+                .renderingMode(.template)
+                .resizable()
+                .scaledToFit()
+                .frame(width: 18, height: 18)
+                .accessibilityLabel("dBDeck")
         }
         .menuBarExtraStyle(.window)
 

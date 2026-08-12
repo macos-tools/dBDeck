@@ -4,7 +4,6 @@ final class PlaybackHistoryStore {
     private let defaults: UserDefaults
     private let storageKey: String
     private var recordsByBundleID: [String: AppPlaybackRecord]
-    private var pendingSecondsByBundleID: [String: TimeInterval] = [:]
 
     init(
         defaults: UserDefaults = .standard,
@@ -40,15 +39,11 @@ final class PlaybackHistoryStore {
                 }
                 return record.bundleID
             }
-            let inheritedMinutes = nestedRecordIDs.reduce(0) {
-                $0 + (recordsByBundleID[$1]?.playbackMinutes ?? 0)
-            }
             let inheritedSeconds = nestedRecordIDs.reduce(0) {
-                $0 + (pendingSecondsByBundleID[$1] ?? 0)
+                $0 + (recordsByBundleID[$1]?.playbackSeconds ?? 0)
             }
             for nestedRecordID in nestedRecordIDs {
                 recordsByBundleID[nestedRecordID] = nil
-                pendingSecondsByBundleID[nestedRecordID] = nil
                 needsSave = true
             }
 
@@ -56,11 +51,11 @@ final class PlaybackHistoryStore {
                 bundleID: observation.bundleID,
                 name: observation.name,
                 bundlePath: observation.bundlePath,
-                playbackMinutes: inheritedMinutes,
+                playbackSeconds: inheritedSeconds,
                 lastPlayedAt: now
             )
             if recordsByBundleID[observation.bundleID] != nil {
-                record.playbackMinutes += inheritedMinutes
+                record.playbackSeconds += inheritedSeconds
             }
 
             if recordsByBundleID[observation.bundleID] == nil
@@ -73,15 +68,8 @@ final class PlaybackHistoryStore {
             record.bundlePath = observation.bundlePath
             record.lastPlayedAt = now
 
-            let pendingSeconds = pendingSecondsByBundleID[observation.bundleID, default: 0]
-                + inheritedSeconds
-                + creditedSeconds
-            let completedMinutes = Int(pendingSeconds / 60)
-            pendingSecondsByBundleID[observation.bundleID] = pendingSeconds
-                - Double(completedMinutes * 60)
-
-            if completedMinutes > 0 {
-                record.playbackMinutes += completedMinutes
+            if creditedSeconds > 0 {
+                record.playbackSeconds += creditedSeconds
                 needsSave = true
             }
             recordsByBundleID[observation.bundleID] = record
@@ -110,8 +98,8 @@ final class PlaybackHistoryStore {
             if lhsPriority != rhsPriority {
                 return lhsPriority < rhsPriority
             }
-            if lhs.playbackMinutes != rhs.playbackMinutes {
-                return lhs.playbackMinutes > rhs.playbackMinutes
+            if lhs.playbackSeconds != rhs.playbackSeconds {
+                return lhs.playbackSeconds > rhs.playbackSeconds
             }
             return lhs.name.localizedCaseInsensitiveCompare(rhs.name) == .orderedAscending
         }
@@ -146,7 +134,7 @@ final class PlaybackHistoryStore {
 #endif
             let record = canonicalizedRecord(decodedRecord)
             if var existing = normalizedRecords[record.bundleID] {
-                existing.playbackMinutes += record.playbackMinutes
+                existing.playbackSeconds += record.playbackSeconds
                 if record.lastPlayedAt > existing.lastPlayedAt {
                     existing.name = record.name
                     existing.bundlePath = record.bundlePath
@@ -193,7 +181,7 @@ final class PlaybackHistoryStore {
             bundleID: bundleID,
             name: name,
             bundlePath: applicationURL.path,
-            playbackMinutes: record.playbackMinutes,
+            playbackSeconds: record.playbackSeconds,
             lastPlayedAt: record.lastPlayedAt
         )
     }

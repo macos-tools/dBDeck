@@ -36,6 +36,14 @@ enum PlaybackHistoryStoreVerifier {
         guard store.records.first(where: { $0.bundleID == music.bundleID })?.playbackMinutes == 0 else {
             throw PlaybackHistoryVerificationFailure.failed("Elapsed time cap was not applied")
         }
+        let subminuteReload = PlaybackHistoryStore(defaults: defaults)
+        guard subminuteReload.records.first(where: { $0.bundleID == music.bundleID })?
+            .playbackSeconds == 10
+        else {
+            throw PlaybackHistoryVerificationFailure.failed(
+                "Sub-minute playback did not survive reload"
+            )
+        }
 
         for offset in 1...12 {
             store.observe(
@@ -88,8 +96,9 @@ enum PlaybackHistoryStoreVerifier {
         }
 
         try verifyNestedHelperMigration()
+        try verifyLegacyMinuteMigration()
 
-        print("PlaybackHistory minute persistence and ranking verification passed")
+        print("PlaybackHistory second persistence, migration, and ranking verification passed")
     }
 
     private static func verifyNestedHelperMigration() throws {
@@ -118,6 +127,41 @@ enum PlaybackHistoryStoreVerifier {
 
         guard store.records.map(\.bundleID) == ["com.google.Chrome"] else {
             throw PlaybackHistoryVerificationFailure.failed("Nested helper history was not merged")
+        }
+    }
+
+    private static func verifyLegacyMinuteMigration() throws {
+        struct LegacyRecord: Codable {
+            let bundleID: String
+            let name: String
+            let bundlePath: String?
+            let playbackMinutes: Int
+            let lastPlayedAt: Date
+        }
+
+        let suiteName = "dBDeckMinuteMigrationTests.\(UUID().uuidString)"
+        guard let defaults = UserDefaults(suiteName: suiteName) else {
+            throw PlaybackHistoryVerificationFailure.failed("Could not create migration suite")
+        }
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let legacyRecord = LegacyRecord(
+            bundleID: "com.example.legacy",
+            name: "Legacy",
+            bundlePath: "/Applications/Legacy.app",
+            playbackMinutes: 3,
+            lastPlayedAt: Date(timeIntervalSince1970: 1_000)
+        )
+        defaults.set(
+            try JSONEncoder().encode([legacyRecord]),
+            forKey: "appPlaybackHistory.v1"
+        )
+
+        let migrated = PlaybackHistoryStore(defaults: defaults)
+        guard migrated.records.first?.playbackSeconds == 180 else {
+            throw PlaybackHistoryVerificationFailure.failed(
+                "Legacy whole-minute playback was not migrated to seconds"
+            )
         }
     }
 }

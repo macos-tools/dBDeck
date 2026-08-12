@@ -6,15 +6,15 @@ dBDeck is a menu bar per-app audio controller for macOS 14.2 and later.
 
 - Remembers every identifiable app that has produced audio.
 - Ranks playing apps first, then running apps with history, then stopped apps
-  with history; each tier uses accumulated playback minutes.
-- Shows the five highest-priority apps in its quick mixer.
+  with history; each tier uses persisted playback seconds.
+- Shows all eligible apps in a scrollable quick mixer.
 - Adjusts each app from 0–100% without changing system volume.
 - Mutes and unmutes individual apps.
 - Remembers volume and mute state by bundle identifier.
 - Runs as a menu-bar-only app with no Dock icon.
 
-Launching the app opens its panel immediately. Opening it again, or clicking the
-speaker icon in the menu bar, reopens the same panel. Background daemons, nested
+Launching the app installs its system-managed menu bar item. Clicking its
+three-fader icon opens the mixer panel. Background daemons, nested
 helper apps, and raw process IDs are hidden or resolved to their containing
 application. Apps that have never produced audio do not appear. Deleted apps are
 filtered from the interface while their small history records remain stored.
@@ -46,7 +46,7 @@ Optional modes:
 ./script/test.sh
 ```
 
-This checks settings persistence, minute-level playback history and ranking,
+This checks settings persistence, second-level playback history and ranking,
 real-time gain/mute sample processing, and Core Audio discovery against a real
 audio-producing app.
 
