@@ -108,10 +108,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 @main
 struct dBDeckApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
-    @AppStorage("menuBarExtraInserted") private var isMenuBarExtraInserted = true
 
     var body: some Scene {
-        MenuBarExtra(isInserted: $isMenuBarExtraInserted) {
+        MenuBarExtra {
             QuickMixerView(store: appDelegate.store)
         } label: {
             Image(nsImage: MenuBarIcon.image)
@@ -121,9 +120,5 @@ struct dBDeckApp: App {
                 .accessibilityLabel("dBDeck")
         }
         .menuBarExtraStyle(.window)
-
-        Settings {
-            EmptyView()
-        }
     }
 }

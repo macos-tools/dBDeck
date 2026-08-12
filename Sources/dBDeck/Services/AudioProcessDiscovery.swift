@@ -63,13 +63,31 @@ struct AudioProcessDiscovery {
     }
 
     func activeProcessObjectIDs(for processID: pid_t) throws -> [AudioObjectID] {
-        try activeProcesses()
+        try activeOutputProcesses()
             .filter { $0.pid == processID }
             .map(\.audioObjectID)
             .sorted()
     }
 
+    func activeProcessObjectIDs() throws -> [AudioObjectID] {
+        try activeOutputProcesses().map(\.audioObjectID).sorted()
+    }
+
     private func activeProcesses() throws -> [ActiveProcess] {
+        try activeOutputProcesses().map { process in
+            ActiveProcess(
+                audioObjectID: process.audioObjectID,
+                pid: process.pid,
+                reportedBundleID: try? CoreAudioSupport.readString(
+                    objectID: process.audioObjectID,
+                    selector: kAudioProcessPropertyBundleID,
+                    operation: "Read audio process bundle ID"
+                )
+            )
+        }
+    }
+
+    private func activeOutputProcesses() throws -> [(audioObjectID: AudioObjectID, pid: pid_t)] {
         let processObjectIDs = try CoreAudioSupport.readObjectIDs(
             objectID: CoreAudioSupport.systemObject,
             selector: kAudioHardwarePropertyProcessObjectList,
@@ -96,15 +114,7 @@ struct AudioProcessDiscovery {
                 return nil
             }
 
-            return ActiveProcess(
-                audioObjectID: objectID,
-                pid: pid,
-                reportedBundleID: try? CoreAudioSupport.readString(
-                    objectID: objectID,
-                    selector: kAudioProcessPropertyBundleID,
-                    operation: "Read audio process bundle ID"
-                )
-            )
+            return (objectID, pid)
         }
     }
 }

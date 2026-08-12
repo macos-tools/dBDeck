@@ -6,7 +6,7 @@ import OSLog
 @MainActor
 final class AppAudioStore: ObservableObject {
     @Published private(set) var apps: [AudioApp] = []
-    @Published var errorMessage: String?
+    @Published private(set) var errorMessage: String?
 
     private(set) var settings: [String: AppVolumeSetting]
 
@@ -27,6 +27,8 @@ final class AppAudioStore: ObservableObject {
     private var volumeControls: [String: AppVolumeControl] = [:]
     private var historicalMetadata: [String: HistoricalApplicationMetadata] = [:]
     private var unavailableHistoricalBundleIDs = Set<String>()
+    private var operationErrorMessage: String?
+    private var routeErrorsByAppID: [String: String] = [:]
 
     private struct HistoricalApplicationMetadata {
         let bundleURL: URL
@@ -52,7 +54,6 @@ final class AppAudioStore: ObservableObject {
             }
             logger.info("Core Audio event monitoring started; idle polling is disabled")
         } catch {
-            errorMessage = error.localizedDescription
             startFallbackPolling()
             logger.error("Core Audio event monitoring failed; using 10-second fallback: \(error.localizedDescription, privacy: .public)")
         }
@@ -110,7 +111,8 @@ final class AppAudioStore: ObservableObject {
         for app in apps where app.isPlaying {
             _ = engine.apply(.passthrough, to: app)
         }
-        setErrorMessage(nil)
+        routeErrorsByAppID.removeAll()
+        publishErrorMessage()
     }
 
     func playbackMinutes(for app: AudioApp) -> Int {
@@ -119,7 +121,8 @@ final class AppAudioStore: ObservableObject {
     }
 
     func retry() {
-        errorMessage = nil
+        operationErrorMessage = nil
+        routeErrorsByAppID.removeAll()
         engine.retryFailures()
         unavailableHistoricalBundleIDs.removeAll()
         refresh()
@@ -132,19 +135,18 @@ final class AppAudioStore: ObservableObject {
 
     func refreshVisiblePlaybackState() {
         do {
-            let activeApps = try discovery.activeApps()
-            let discoveredProcesses = Dictionary(
-                uniqueKeysWithValues: activeApps.map { ($0.id, $0.processIDs) }
-            )
-            let publishedProcesses = Dictionary(
-                uniqueKeysWithValues: apps
-                    .filter(\.isPlaying)
-                    .map { ($0.id, $0.processIDs) }
-            )
+            let discoveredProcesses = try discovery.activeProcessObjectIDs()
+            let publishedProcesses = apps
+                .filter(\.isPlaying)
+                .flatMap(\.processIDs)
+                .sorted()
             guard discoveredProcesses != publishedProcesses else { return }
-            refresh()
+            let now = Date()
+            let activeApps = try discovery.activeApps()
+            refresh(activeApps: activeApps, now: now)
         } catch {
-            setErrorMessage(error.localizedDescription)
+            operationErrorMessage = error.localizedDescription
+            publishErrorMessage()
         }
     }
 
@@ -152,36 +154,10 @@ final class AppAudioStore: ObservableObject {
         do {
             let now = Date()
             let activeApps = try discovery.activeApps()
-            accountCurrentPlayback(until: now)
-
-            let observations = activeApps.compactMap { app -> PlaybackObservation? in
-                guard let bundleID = app.bundleID else { return nil }
-                return PlaybackObservation(
-                    bundleID: bundleID,
-                    name: app.name,
-                    bundlePath: app.bundleURL?.path
-                )
-            }
-            playbackHistory.observe(
-                observations,
-                elapsed: 0,
-                now: now
-            )
-            currentPlaybackObservations = observations
-            lastPlaybackAccountingDate = observations.isEmpty ? nil : now
-            updatePlaybackCheckpointTimer()
-            rebuildVisibleApps(activeApps: activeApps)
-            engine.retainOnly(appIDs: Set(activeApps.map(\.id)))
-
-            var firstError: String?
-            for app in activeApps {
-                if let message = engine.apply(setting(for: app), to: app), firstError == nil {
-                    firstError = "\(app.name): \(message)"
-                }
-            }
-            setErrorMessage(firstError)
+            refresh(activeApps: activeApps, now: now)
         } catch {
-            setErrorMessage(error.localizedDescription)
+            operationErrorMessage = error.localizedDescription
+            publishErrorMessage()
         }
     }
 
@@ -203,11 +179,45 @@ final class AppAudioStore: ObservableObject {
         volumeControls[app.id]?.update(normalizedSetting)
         settingsNeedSave = true
         schedulePreferencesSave()
-        if app.isPlaying, let message = engine.apply(newSetting, to: app) {
-            setErrorMessage("\(app.name): \(message)")
-        } else {
-            setErrorMessage(nil)
+        if app.isPlaying {
+            if let message = engine.apply(normalizedSetting, to: app) {
+                routeErrorsByAppID[app.id] = "\(app.name): \(message)"
+            } else {
+                routeErrorsByAppID[app.id] = nil
+            }
         }
+        publishErrorMessage()
+    }
+
+    private func refresh(activeApps: [AudioApp], now: Date) {
+        accountCurrentPlayback(until: now)
+
+        let observations = activeApps.compactMap { app -> PlaybackObservation? in
+            guard let bundleID = app.bundleID else { return nil }
+            return PlaybackObservation(
+                bundleID: bundleID,
+                name: app.name,
+                bundlePath: app.bundleURL?.path
+            )
+        }
+        playbackHistory.observe(observations, elapsed: 0, now: now)
+        currentPlaybackObservations = observations
+        lastPlaybackAccountingDate = observations.isEmpty ? nil : now
+        updatePlaybackCheckpointTimer()
+        rebuildVisibleApps(activeApps: activeApps, now: now)
+
+        let activeAppIDs = Set(activeApps.map(\.id))
+        engine.retainOnly(appIDs: activeAppIDs)
+        routeErrorsByAppID = routeErrorsByAppID.filter { activeAppIDs.contains($0.key) }
+        for app in activeApps {
+            if let message = engine.apply(setting(for: app), to: app) {
+                routeErrorsByAppID[app.id] = "\(app.name): \(message)"
+            } else {
+                routeErrorsByAppID[app.id] = nil
+            }
+        }
+        operationErrorMessage = nil
+        publishErrorMessage()
     }
 
     private func cacheRunningApplications() {
@@ -366,8 +376,7 @@ final class AppAudioStore: ObservableObject {
         apps = refreshedApps
     }
 
-    private func rebuildVisibleApps(activeApps: [AudioApp]) {
-        let now = Date()
+    private func rebuildVisibleApps(activeApps: [AudioApp], now: Date) {
         let activeAppsByBundleID = Dictionary(
             uniqueKeysWithValues: activeApps.compactMap { app in
                 app.bundleID.map { ($0, app) }
@@ -425,6 +434,16 @@ final class AppAudioStore: ObservableObject {
     private func setErrorMessage(_ message: String?) {
         guard errorMessage != message else { return }
         errorMessage = message
+    }
+
+    private func publishErrorMessage() {
+        if let operationErrorMessage {
+            setErrorMessage(operationErrorMessage)
+            return
+        }
+        let orderedRouteError = apps.lazy.compactMap { self.routeErrorsByAppID[$0.id] }.first
+            ?? routeErrorsByAppID.sorted(by: { $0.key < $1.key }).first?.value
+        setErrorMessage(orderedRouteError)
     }
 
     private func historicalAudioApp(

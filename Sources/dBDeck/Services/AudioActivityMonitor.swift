@@ -8,6 +8,7 @@ final class AudioActivityMonitor {
     private let onChange: () -> Void
     private let logger = Logger(subsystem: "com.dbdeck.mac", category: "Energy")
     private var processListListener: AudioObjectPropertyListenerBlock?
+    private var defaultOutputListener: AudioObjectPropertyListenerBlock?
     private var outputListeners: [AudioObjectID: AudioObjectPropertyListenerBlock] = [:]
     private var pendingNotification: DispatchWorkItem?
 
@@ -31,6 +32,38 @@ final class AudioActivityMonitor {
             ),
             operation: "Watch audio process list"
         )
+
+        let outputListener: AudioObjectPropertyListenerBlock = { [weak self] _, _ in
+            self?.scheduleChangeNotification()
+        }
+        defaultOutputListener = outputListener
+        var outputAddress = CoreAudioSupport.address(
+            kAudioHardwarePropertyDefaultOutputDevice
+        )
+        do {
+            try CoreAudioSupport.check(
+                AudioObjectAddPropertyListenerBlock(
+                    CoreAudioSupport.systemObject,
+                    &outputAddress,
+                    queue,
+                    outputListener
+                ),
+                operation: "Watch default output device"
+            )
+        } catch {
+            var processAddress = CoreAudioSupport.address(
+                kAudioHardwarePropertyProcessObjectList
+            )
+            AudioObjectRemovePropertyListenerBlock(
+                CoreAudioSupport.systemObject,
+                &processAddress,
+                queue,
+                listener
+            )
+            processListListener = nil
+            defaultOutputListener = nil
+            throw error
+        }
 
         queue.sync {
             rebuildOutputListeners()
@@ -101,6 +134,18 @@ final class AudioActivityMonitor {
             )
         }
         processListListener = nil
+        if let defaultOutputListener {
+            var address = CoreAudioSupport.address(
+                kAudioHardwarePropertyDefaultOutputDevice
+            )
+            AudioObjectRemovePropertyListenerBlock(
+                CoreAudioSupport.systemObject,
+                &address,
+                queue,
+                defaultOutputListener
+            )
+        }
+        defaultOutputListener = nil
     }
 
     private func scheduleChangeNotification() {
