@@ -15,6 +15,6 @@ struct AppVolumeSetting: Codable, Equatable {
     }
 
     var needsProcessing: Bool {
-        isMuted || normalized.volume < 0.999
+        isMuted || normalized.volume < 1
     }
 }

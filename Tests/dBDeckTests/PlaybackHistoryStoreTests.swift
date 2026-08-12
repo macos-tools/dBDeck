@@ -27,31 +27,24 @@ enum PlaybackHistoryStoreVerifier {
         )
 
         store.observe([music], elapsed: 30, now: start)
-        store.observe([music], elapsed: 30, now: start.addingTimeInterval(30))
         store.observe([browser], elapsed: 0, now: start.addingTimeInterval(60))
 
         guard store.records.count == 2 else {
             throw PlaybackHistoryVerificationFailure.failed("Played apps were not retained")
         }
         guard store.records.first(where: { $0.bundleID == music.bundleID })?.playbackMinutes == 0 else {
-            throw PlaybackHistoryVerificationFailure.failed("Elapsed time cap was not applied")
+            throw PlaybackHistoryVerificationFailure.failed("Sub-minute playback was rounded too early")
         }
         let subminuteReload = PlaybackHistoryStore(defaults: defaults)
         guard subminuteReload.records.first(where: { $0.bundleID == music.bundleID })?
-            .playbackSeconds == 10
+            .playbackSeconds == 30
         else {
             throw PlaybackHistoryVerificationFailure.failed(
-                "Sub-minute playback did not survive reload"
+                "Event-driven playback interval did not survive reload"
             )
         }
 
-        for offset in 1...12 {
-            store.observe(
-                [music],
-                elapsed: 5,
-                now: start.addingTimeInterval(Double(60 + offset * 5))
-            )
-        }
+        store.observe([music], elapsed: 30, now: start.addingTimeInterval(30))
         guard store.records.first(where: { $0.bundleID == music.bundleID })?.playbackMinutes == 1 else {
             throw PlaybackHistoryVerificationFailure.failed("Playback was not credited by full minutes")
         }

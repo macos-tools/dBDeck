@@ -25,7 +25,7 @@ final class PlaybackHistoryStore {
         now: Date = Date()
     ) {
         var needsSave = false
-        let creditedSeconds = min(max(elapsed, 0), 5)
+        let creditedSeconds = max(elapsed, 0)
 
         for observation in observations {
             let nestedRecordIDs = recordsByBundleID.values.compactMap { record -> String? in

@@ -74,6 +74,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return true
     }
 
+    func applicationWillTerminate(_ notification: Notification) {
+        store.flushPlaybackHistory()
+    }
+
     private func showMixerWindow() {
         let controller: NSWindowController
         if let mixerWindowController {

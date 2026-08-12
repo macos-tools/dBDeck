@@ -9,6 +9,7 @@ enum VolumePreferencesVerifier {
     static func main() throws {
         try verifySaveAndLoad()
         try verifyNormalization()
+        try verifyPassthroughBoundary()
         print("VolumePreferences verification passed")
     }
 
@@ -36,6 +37,18 @@ enum VolumePreferencesVerifier {
         }
         guard AppVolumeSetting(volume: 2, isMuted: false).normalized.volume == 1 else {
             throw VerificationFailure.failed("Upper volume bound was not clamped")
+        }
+    }
+
+    private static func verifyPassthroughBoundary() throws {
+        guard !AppVolumeSetting.passthrough.needsProcessing else {
+            throw VerificationFailure.failed("100% unmuted audio did not use passthrough")
+        }
+        guard AppVolumeSetting(volume: 0.999, isMuted: false).needsProcessing else {
+            throw VerificationFailure.failed("Sub-100% volume incorrectly used passthrough")
+        }
+        guard AppVolumeSetting(volume: 1, isMuted: true).needsProcessing else {
+            throw VerificationFailure.failed("Muted audio incorrectly used passthrough")
         }
     }
 }

@@ -1,6 +1,7 @@
 import AppKit
 import Combine
 import Foundation
+import OSLog
 
 @MainActor
 final class AppAudioStore: ObservableObject {
@@ -12,8 +13,14 @@ final class AppAudioStore: ObservableObject {
     private let preferences: VolumePreferences
     private let playbackHistory: PlaybackHistoryStore
     private let engine = AppAudioEngine()
-    private var refreshTimer: Timer?
-    private var lastRefreshDate: Date?
+    private let logger = Logger(subsystem: "com.dbdeck.mac", category: "Energy")
+    private var audioMonitor: AudioActivityMonitor?
+    private var fallbackTimer: Timer?
+    private var playbackCheckpointTimer: Timer?
+    private var workspaceObservers: [NSObjectProtocol] = []
+    private var runningApplicationBundleIDsByPID: [pid_t: String] = [:]
+    private var currentPlaybackObservations: [PlaybackObservation] = []
+    private var lastPlaybackAccountingDate: Date?
 
     init(
         preferences: VolumePreferences = VolumePreferences(),
@@ -22,16 +29,31 @@ final class AppAudioStore: ObservableObject {
         self.preferences = preferences
         self.playbackHistory = playbackHistory
         settings = preferences.load()
-        refresh()
-        refreshTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
-            Task { @MainActor in
-                self?.refresh()
+        cacheRunningApplications()
+        observeWorkspaceEvents()
+
+        do {
+            audioMonitor = try AudioActivityMonitor { [weak self] in
+                Task { @MainActor in
+                    self?.refresh()
+                }
             }
+            logger.info("Core Audio event monitoring started; idle polling is disabled")
+        } catch {
+            errorMessage = error.localizedDescription
+            startFallbackPolling()
+            logger.error("Core Audio event monitoring failed; using 10-second fallback: \(error.localizedDescription, privacy: .public)")
         }
+        refresh()
     }
 
     deinit {
-        refreshTimer?.invalidate()
+        fallbackTimer?.invalidate()
+        playbackCheckpointTimer?.invalidate()
+        let notificationCenter = NSWorkspace.shared.notificationCenter
+        for observer in workspaceObservers {
+            notificationCenter.removeObserver(observer)
+        }
         engine.stopAll()
     }
 
@@ -69,36 +91,34 @@ final class AppAudioStore: ObservableObject {
     func refresh() {
         do {
             let now = Date()
-            let elapsed = lastRefreshDate.map { now.timeIntervalSince($0) } ?? 0
-            lastRefreshDate = now
-
             let activeApps = try discovery.activeApps()
+            accountCurrentPlayback(until: now)
+
             let activeAppsByBundleID = Dictionary(
                 uniqueKeysWithValues: activeApps.compactMap { app in
                     app.bundleID.map { ($0, app) }
                 }
             )
             let activeBundleIDs = Set(activeAppsByBundleID.keys)
-            let runningBundleIDs: Set<String> = Set(
-                NSWorkspace.shared.runningApplications.compactMap { application -> String? in
-                    guard application.activationPolicy != .prohibited else { return nil }
-                    return application.bundleIdentifier
-                }
-            )
+            let runningBundleIDs = Set(runningApplicationBundleIDsByPID.values)
+            let observations = activeApps.compactMap { app -> PlaybackObservation? in
+                guard let bundleID = app.bundleID else { return nil }
+                return PlaybackObservation(
+                    bundleID: bundleID,
+                    name: app.name,
+                    bundlePath: app.bundleURL?.path
+                )
+            }
             playbackHistory.observe(
-                activeApps.compactMap { app in
-                    guard let bundleID = app.bundleID else { return nil }
-                    return PlaybackObservation(
-                        bundleID: bundleID,
-                        name: app.name,
-                        bundlePath: app.bundleURL?.path
-                    )
-                },
-                elapsed: elapsed,
+                observations,
+                elapsed: 0,
                 now: now
             )
+            currentPlaybackObservations = observations
+            lastPlaybackAccountingDate = observations.isEmpty ? nil : now
+            updatePlaybackCheckpointTimer()
 
-            apps = playbackHistory
+            let refreshedApps = playbackHistory
                 .prioritizedRecords(
                     playingBundleIDs: activeBundleIDs,
                     runningBundleIDs: runningBundleIDs
@@ -112,6 +132,7 @@ final class AppAudioStore: ObservableObject {
                         isRunning: runningBundleIDs.contains(record.bundleID)
                     )
                 }
+            publishAppsIfChanged(refreshedApps)
             engine.retainOnly(appIDs: Set(activeApps.map(\.id)))
 
             var firstError: String?
@@ -120,15 +141,20 @@ final class AppAudioStore: ObservableObject {
                     firstError = "\(app.name): \(message)"
                 }
             }
-            errorMessage = firstError
+            setErrorMessage(firstError)
         } catch {
-            errorMessage = error.localizedDescription
+            setErrorMessage(error.localizedDescription)
         }
     }
 
     func quit() {
+        flushPlaybackHistory()
         engine.stopAll()
         NSApplication.shared.terminate(nil)
+    }
+
+    func flushPlaybackHistory() {
+        accountCurrentPlayback(until: Date())
     }
 
     private func update(_ newSetting: AppVolumeSetting, for app: AudioApp) {
@@ -137,10 +163,162 @@ final class AppAudioStore: ObservableObject {
         settings = updatedSettings
         preferences.save(updatedSettings)
         if app.isPlaying, let message = engine.apply(newSetting, to: app) {
-            errorMessage = "\(app.name): \(message)"
+            setErrorMessage("\(app.name): \(message)")
         } else {
-            errorMessage = nil
+            setErrorMessage(nil)
         }
+    }
+
+    private func cacheRunningApplications() {
+        runningApplicationBundleIDsByPID = Dictionary(
+            uniqueKeysWithValues: NSWorkspace.shared.runningApplications.compactMap {
+                application -> (pid_t, String)? in
+                guard application.activationPolicy != .prohibited,
+                      let bundleID = application.bundleIdentifier
+                else {
+                    return nil
+                }
+                return (application.processIdentifier, bundleID)
+            }
+        )
+    }
+
+    private func observeWorkspaceEvents() {
+        let notificationCenter = NSWorkspace.shared.notificationCenter
+        workspaceObservers.append(notificationCenter.addObserver(
+            forName: NSWorkspace.didLaunchApplicationNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] notification in
+            guard let application = notification.userInfo?[NSWorkspace.applicationUserInfoKey]
+                as? NSRunningApplication
+            else {
+                return
+            }
+            Task { @MainActor in
+                self?.applicationDidLaunch(application)
+            }
+        })
+        workspaceObservers.append(notificationCenter.addObserver(
+            forName: NSWorkspace.didTerminateApplicationNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] notification in
+            guard let application = notification.userInfo?[NSWorkspace.applicationUserInfoKey]
+                as? NSRunningApplication
+            else {
+                return
+            }
+            Task { @MainActor in
+                self?.applicationDidTerminate(application)
+            }
+        })
+        workspaceObservers.append(notificationCenter.addObserver(
+            forName: NSWorkspace.willSleepNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in
+                self?.prepareForSleep()
+            }
+        })
+        workspaceObservers.append(notificationCenter.addObserver(
+            forName: NSWorkspace.didWakeNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in
+                self?.refresh()
+            }
+        })
+    }
+
+    private func applicationDidLaunch(_ application: NSRunningApplication) {
+        guard application.activationPolicy != .prohibited,
+              let bundleID = application.bundleIdentifier
+        else {
+            return
+        }
+        runningApplicationBundleIDsByPID[application.processIdentifier] = bundleID
+        refresh()
+    }
+
+    private func applicationDidTerminate(_ application: NSRunningApplication) {
+        guard runningApplicationBundleIDsByPID.removeValue(
+            forKey: application.processIdentifier
+        ) != nil else {
+            return
+        }
+        refresh()
+    }
+
+    private func accountCurrentPlayback(until now: Date) {
+        guard !currentPlaybackObservations.isEmpty,
+              let lastPlaybackAccountingDate
+        else {
+            return
+        }
+        let elapsed = max(now.timeIntervalSince(lastPlaybackAccountingDate), 0)
+        guard elapsed > 0 else { return }
+        playbackHistory.observe(currentPlaybackObservations, elapsed: elapsed, now: now)
+        self.lastPlaybackAccountingDate = now
+    }
+
+    private func updatePlaybackCheckpointTimer() {
+        if currentPlaybackObservations.isEmpty {
+            playbackCheckpointTimer?.invalidate()
+            playbackCheckpointTimer = nil
+            return
+        }
+        guard playbackCheckpointTimer == nil else { return }
+        playbackCheckpointTimer = Timer.scheduledTimer(
+            withTimeInterval: 60,
+            repeats: true
+        ) { [weak self] _ in
+            Task { @MainActor in
+                self?.accountCurrentPlayback(until: Date())
+            }
+        }
+    }
+
+    private func prepareForSleep() {
+        accountCurrentPlayback(until: Date())
+        currentPlaybackObservations = []
+        lastPlaybackAccountingDate = nil
+        updatePlaybackCheckpointTimer()
+    }
+
+    private func startFallbackPolling() {
+        fallbackTimer = Timer.scheduledTimer(withTimeInterval: 10, repeats: true) {
+            [weak self] _ in
+            Task { @MainActor in
+                self?.refresh()
+            }
+        }
+    }
+
+    private func publishAppsIfChanged(_ refreshedApps: [AudioApp]) {
+        guard !Self.sameVisibleState(apps, refreshedApps) else { return }
+        apps = refreshedApps
+    }
+
+    private static func sameVisibleState(_ lhs: [AudioApp], _ rhs: [AudioApp]) -> Bool {
+        guard lhs.count == rhs.count else { return false }
+        return zip(lhs, rhs).allSatisfy { left, right in
+            left.id == right.id
+                && left.bundleID == right.bundleID
+                && left.name == right.name
+                && left.bundleURL == right.bundleURL
+                && left.processIDs == right.processIDs
+                && left.processIdentifiers == right.processIdentifiers
+                && left.isPlaying == right.isPlaying
+                && left.isRunning == right.isRunning
+        }
+    }
+
+    private func setErrorMessage(_ message: String?) {
+        guard errorMessage != message else { return }
+        errorMessage = message
     }
 
     private func historicalAudioApp(
