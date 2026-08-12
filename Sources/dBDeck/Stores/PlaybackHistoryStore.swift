@@ -3,10 +3,15 @@ import Foundation
 final class PlaybackHistoryStore {
     static let visibleHistoryLimit = 10
     static let dormantHistoryInterval: TimeInterval = 7 * 24 * 60 * 60
+    static let visibilityMaintenanceInterval: TimeInterval = 24 * 60 * 60
 
     private let defaults: UserDefaults
     private let storageKey: String
+    private let hiddenBundleIDsKey: String
+    private let lastVisibilityMaintenanceKey: String
     private var recordsByBundleID: [String: AppPlaybackRecord]
+    private var hiddenBundleIDs: Set<String>
+    private var lastVisibilityMaintenanceAt: Date?
 
     init(
         defaults: UserDefaults = .standard,
@@ -14,7 +19,13 @@ final class PlaybackHistoryStore {
     ) {
         self.defaults = defaults
         self.storageKey = storageKey
+        hiddenBundleIDsKey = storageKey + ".hiddenBundleIDs"
+        lastVisibilityMaintenanceKey = storageKey + ".lastVisibilityMaintenanceAt"
         recordsByBundleID = Self.load(defaults: defaults, storageKey: storageKey)
+        hiddenBundleIDs = Set(defaults.stringArray(forKey: hiddenBundleIDsKey) ?? [])
+        lastVisibilityMaintenanceAt = defaults.object(
+            forKey: lastVisibilityMaintenanceKey
+        ) as? Date
         save()
     }
 
@@ -112,22 +123,50 @@ final class PlaybackHistoryStore {
         }
     }
 
-    func shouldHideFromList(
-        _ record: AppPlaybackRecord,
-        currentListCount: Int,
+    func updateHiddenRecordsIfNeeded(
+        installedRecords: [AppPlaybackRecord],
         playingBundleIDs: Set<String>,
         runningBundleIDs: Set<String>,
         now: Date
-    ) -> Bool {
-        guard currentListCount > Self.visibleHistoryLimit,
-              !playingBundleIDs.contains(record.bundleID),
-              !runningBundleIDs.contains(record.bundleID)
-        else {
-            return false
+    ) {
+        let activeBundleIDs = playingBundleIDs.union(runningBundleIDs)
+        let previousHiddenBundleIDs = hiddenBundleIDs
+        hiddenBundleIDs.subtract(activeBundleIDs)
+
+        guard lastVisibilityMaintenanceAt.map({
+            now.timeIntervalSince($0) >= Self.visibilityMaintenanceInterval
+        }) ?? true else {
+            if hiddenBundleIDs != previousHiddenBundleIDs {
+                saveVisibilityState()
+            }
+            return
         }
-        return record.lastPlayedAt < now.addingTimeInterval(
-            -Self.dormantHistoryInterval
-        )
+
+        lastVisibilityMaintenanceAt = now
+        if installedRecords.count > Self.visibleHistoryLimit {
+            let dormantThreshold = now.addingTimeInterval(-Self.dormantHistoryInterval)
+            hiddenBundleIDs = Set(installedRecords.compactMap { record in
+                guard !activeBundleIDs.contains(record.bundleID),
+                      record.lastPlayedAt < dormantThreshold
+                else {
+                    return nil
+                }
+                return record.bundleID
+            })
+        } else {
+            hiddenBundleIDs.removeAll()
+        }
+        saveVisibilityState()
+    }
+
+    func isHiddenFromList(
+        bundleID: String,
+        playingBundleIDs: Set<String>,
+        runningBundleIDs: Set<String>
+    ) -> Bool {
+        hiddenBundleIDs.contains(bundleID)
+            && !playingBundleIDs.contains(bundleID)
+            && !runningBundleIDs.contains(bundleID)
     }
 
     private func priority(
@@ -214,5 +253,10 @@ final class PlaybackHistoryStore {
     private func save() {
         guard let data = try? JSONEncoder().encode(records) else { return }
         defaults.set(data, forKey: storageKey)
+    }
+
+    private func saveVisibilityState() {
+        defaults.set(hiddenBundleIDs.sorted(), forKey: hiddenBundleIDsKey)
+        defaults.set(lastVisibilityMaintenanceAt, forKey: lastVisibilityMaintenanceKey)
     }
 }

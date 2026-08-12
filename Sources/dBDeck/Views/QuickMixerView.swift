@@ -44,6 +44,14 @@ struct QuickMixerView: View {
             footer
         }
         .frame(width: 380, height: 430)
+        .task {
+            store.refresh()
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(1))
+                guard !Task.isCancelled else { break }
+                store.refreshVisiblePlaybackState()
+            }
+        }
     }
 
     private var header: some View {

@@ -127,55 +127,124 @@ enum PlaybackHistoryStoreVerifier {
                 -PlaybackHistoryStore.dormantHistoryInterval
             )
         )
-
-        guard !store.shouldHideFromList(
-            stale,
-            currentListCount: 10,
-            playingBundleIDs: [],
-            runningBundleIDs: [],
-            now: now
-        ) else {
-            throw PlaybackHistoryVerificationFailure.failed(
-                "A list of 10 apps was pruned"
+        let recentRecords = (0..<9).map { index in
+            AppPlaybackRecord(
+                bundleID: "com.example.recent.\(index)",
+                name: "Recent \(index)",
+                bundlePath: nil,
+                playbackSeconds: 60,
+                lastPlayedAt: now
             )
         }
-        guard store.shouldHideFromList(
-            stale,
-            currentListCount: 11,
+        let installedRecords = [stale, boundary] + recentRecords
+
+        store.updateHiddenRecordsIfNeeded(
+            installedRecords: installedRecords,
             playingBundleIDs: [],
             runningBundleIDs: [],
             now: now
+        )
+        guard store.isHiddenFromList(
+            bundleID: stale.bundleID,
+            playingBundleIDs: [],
+            runningBundleIDs: []
         ) else {
             throw PlaybackHistoryVerificationFailure.failed(
                 "Dormant history was not hidden above the list limit"
             )
         }
-        guard !store.shouldHideFromList(
-            boundary,
-            currentListCount: 11,
+        guard !store.isHiddenFromList(
+            bundleID: boundary.bundleID,
             playingBundleIDs: [],
-            runningBundleIDs: [],
-            now: now
+            runningBundleIDs: []
         ) else {
             throw PlaybackHistoryVerificationFailure.failed(
                 "Exactly seven-day-old history was hidden too early"
             )
         }
-        guard !store.shouldHideFromList(
-            stale,
-            currentListCount: 11,
-            playingBundleIDs: [stale.bundleID],
-            runningBundleIDs: [],
-            now: now
-        ), !store.shouldHideFromList(
-            stale,
-            currentListCount: 11,
+
+        let twelveHoursLater = now.addingTimeInterval(12 * 60 * 60)
+        store.updateHiddenRecordsIfNeeded(
+            installedRecords: installedRecords,
             playingBundleIDs: [],
-            runningBundleIDs: [stale.bundleID],
-            now: now
+            runningBundleIDs: [],
+            now: twelveHoursLater
+        )
+        guard !store.isHiddenFromList(
+            bundleID: boundary.bundleID,
+            playingBundleIDs: [],
+            runningBundleIDs: []
         ) else {
             throw PlaybackHistoryVerificationFailure.failed(
-                "Playing or running apps were hidden"
+                "Visibility maintenance ran more than once per day"
+            )
+        }
+
+        let oneDayLater = now.addingTimeInterval(PlaybackHistoryStore.visibilityMaintenanceInterval)
+        store.updateHiddenRecordsIfNeeded(
+            installedRecords: installedRecords,
+            playingBundleIDs: [],
+            runningBundleIDs: [],
+            now: oneDayLater
+        )
+        guard store.isHiddenFromList(
+            bundleID: boundary.bundleID,
+            playingBundleIDs: [],
+            runningBundleIDs: []
+        ) else {
+            throw PlaybackHistoryVerificationFailure.failed(
+                "Daily visibility maintenance did not run"
+            )
+        }
+
+        store.updateHiddenRecordsIfNeeded(
+            installedRecords: installedRecords,
+            playingBundleIDs: [stale.bundleID],
+            runningBundleIDs: [],
+            now: oneDayLater.addingTimeInterval(1)
+        )
+        guard !store.isHiddenFromList(
+            bundleID: stale.bundleID,
+            playingBundleIDs: [],
+            runningBundleIDs: []
+        ) else {
+            throw PlaybackHistoryVerificationFailure.failed(
+                "An active app did not leave the hidden list immediately"
+            )
+        }
+
+        let reloaded = PlaybackHistoryStore(defaults: defaults)
+        reloaded.updateHiddenRecordsIfNeeded(
+            installedRecords: installedRecords,
+            playingBundleIDs: [],
+            runningBundleIDs: [],
+            now: oneDayLater.addingTimeInterval(2)
+        )
+        guard !reloaded.isHiddenFromList(
+            bundleID: stale.bundleID,
+            playingBundleIDs: [],
+            runningBundleIDs: []
+        ) else {
+            throw PlaybackHistoryVerificationFailure.failed(
+                "Daily visibility state did not survive reload"
+            )
+        }
+
+        reloaded.updateHiddenRecordsIfNeeded(
+            installedRecords: Array(installedRecords.prefix(10)),
+            playingBundleIDs: [],
+            runningBundleIDs: [],
+            now: oneDayLater.addingTimeInterval(
+                PlaybackHistoryStore.visibilityMaintenanceInterval
+            )
+        )
+        guard !reloaded.isHiddenFromList(
+            bundleID: boundary.bundleID,
+            playingBundleIDs: [],
+            runningBundleIDs: []
+        ) else {
+            throw PlaybackHistoryVerificationFailure.failed(
+                "A list of 10 apps retained a stale hidden state"
             )
         }
     }

@@ -130,6 +130,24 @@ final class AppAudioStore: ObservableObject {
         refresh()
     }
 
+    func refreshVisiblePlaybackState() {
+        do {
+            let activeApps = try discovery.activeApps()
+            let discoveredProcesses = Dictionary(
+                uniqueKeysWithValues: activeApps.map { ($0.id, $0.processIDs) }
+            )
+            let publishedProcesses = Dictionary(
+                uniqueKeysWithValues: apps
+                    .filter(\.isPlaying)
+                    .map { ($0.id, $0.processIDs) }
+            )
+            guard discoveredProcesses != publishedProcesses else { return }
+            refresh()
+        } catch {
+            setErrorMessage(error.localizedDescription)
+        }
+    }
+
     func refresh() {
         do {
             let now = Date()
@@ -322,7 +340,7 @@ final class AppAudioStore: ObservableObject {
             repeats: true
         ) { [weak self] _ in
             Task { @MainActor in
-                self?.accountCurrentPlayback(until: Date())
+                self?.refresh()
             }
         }
     }
@@ -374,14 +392,17 @@ final class AppAudioStore: ObservableObject {
                 }
                 return (record, app)
             }
-        let currentListCount = installedRecordsAndApps.count
+        playbackHistory.updateHiddenRecordsIfNeeded(
+            installedRecords: installedRecordsAndApps.map(\.0),
+            playingBundleIDs: activeBundleIDs,
+            runningBundleIDs: runningBundleIDs,
+            now: now
+        )
         let refreshedApps = installedRecordsAndApps.compactMap { record, app in
-            playbackHistory.shouldHideFromList(
-                record,
-                currentListCount: currentListCount,
+            playbackHistory.isHiddenFromList(
+                bundleID: record.bundleID,
                 playingBundleIDs: activeBundleIDs,
-                runningBundleIDs: runningBundleIDs,
-                now: now
+                runningBundleIDs: runningBundleIDs
             ) ? nil : app
         }
         publishAppsIfChanged(refreshedApps)
