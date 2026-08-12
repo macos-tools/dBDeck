@@ -29,6 +29,7 @@ swiftc \
   "$ROOT_DIR/Sources/dBDeck/Support/CoreAudioSupport.swift" \
   "$ROOT_DIR/Sources/dBDeck/Support/ApplicationBundleResolver.swift" \
   "$ROOT_DIR/Sources/dBDeck/Support/ApplicationDisplayNameResolver.swift" \
+  "$ROOT_DIR/Sources/dBDeck/Support/HostApplicationIdentity.swift" \
   "$ROOT_DIR/Sources/dBDeck/Services/ApplicationIdentityResolver.swift" \
   "$ROOT_DIR/Sources/dBDeck/Services/AudioProcessDiscovery.swift" \
   "$ROOT_DIR/Tests/Integration/AudioDiscoveryVerifier.swift" \

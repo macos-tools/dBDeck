@@ -54,6 +54,37 @@ struct AppAudioStoreTests {
         #expect(store.apps.first?.processIDs == [22])
     }
 
+    @Test func excludesTheHostApplicationFromHistoryAndVisibleApps() throws {
+        let (defaults, suiteName) = try isolatedDefaults("SelfExclusion")
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let ownBundleID = "com.example.self"
+        let ownApp = audioApp("self", name: "dBDeck", processID: 31)
+        let history = PlaybackHistoryStore(defaults: defaults)
+        history.observe([
+            PlaybackObservation(
+                bundleID: ownBundleID,
+                name: "dBDeck",
+                bundlePath: "/Applications/dBDeck.app"
+            )
+        ], elapsed: 10)
+        VolumePreferences(defaults: defaults).save([
+            ownBundleID: AppVolumeSetting(volume: 0.5, isMuted: false)
+        ])
+
+        let store = AppAudioStore(
+            preferences: VolumePreferences(defaults: defaults),
+            playbackHistory: history,
+            discovery: StubAudioDiscovery(apps: [ownApp]),
+            engine: StubAudioEngine(),
+            excludedBundleIDs: [ownBundleID],
+            startsEventMonitoring: false
+        )
+
+        #expect(store.apps.isEmpty)
+        #expect(store.settings[ownBundleID] == nil)
+        #expect(!history.containsRecord(for: ownBundleID))
+    }
+
     private func isolatedDefaults(_ label: String) throws -> (UserDefaults, String) {
         let suiteName = "dBDeckStore\(label)Tests.\(UUID().uuidString)"
         return (try #require(UserDefaults(suiteName: suiteName)), suiteName)

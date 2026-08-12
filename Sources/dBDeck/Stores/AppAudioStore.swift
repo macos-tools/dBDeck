@@ -15,6 +15,7 @@ final class AppAudioStore: ObservableObject {
     private let playbackHistory: PlaybackHistoryStore
     private let historicalApplications = HistoricalApplicationResolver()
     private let engine: any AppAudioRouting
+    private let excludedBundleIDs: Set<String>
     private let logger = Logger(subsystem: "com.dbdeck.mac", category: "Energy")
     private var audioMonitor: AudioActivityMonitor?
     private var fallbackTimer: Timer?
@@ -34,13 +35,23 @@ final class AppAudioStore: ObservableObject {
         playbackHistory: PlaybackHistoryStore = PlaybackHistoryStore(),
         discovery: any AudioProcessDiscovering = AudioProcessDiscovery(),
         engine: any AppAudioRouting = AppAudioEngine(),
+        excludedBundleIDs: Set<String> = DBDeckApplicationIdentity.bundleIDs,
         startsEventMonitoring: Bool = true
     ) {
         self.preferences = preferences
         self.playbackHistory = playbackHistory
         self.discovery = discovery
         self.engine = engine
-        settings = preferences.load()
+        self.excludedBundleIDs = excludedBundleIDs
+        let savedSettings = preferences.load()
+        let retainedSettings = savedSettings.filter {
+            !excludedBundleIDs.contains($0.key)
+        }
+        settings = retainedSettings
+        if settings.count != savedSettings.count {
+            preferences.save(settings)
+        }
+        playbackHistory.removeRecords(for: excludedBundleIDs)
         cacheRunningApplications()
         if startsEventMonitoring {
             observeWorkspaceEvents()
@@ -180,6 +191,9 @@ final class AppAudioStore: ObservableObject {
     }
 
     private func refresh(activeApps: [AudioApp], now: Date) {
+        let activeApps = activeApps.filter {
+            !excludedBundleIDs.contains($0.bundleID)
+        }
         accountCurrentPlayback(until: now)
 
         let observations = activeApps.map { app in
@@ -214,7 +228,8 @@ final class AppAudioStore: ObservableObject {
             uniqueKeysWithValues: NSWorkspace.shared.runningApplications.compactMap {
                 application -> (pid_t, String)? in
                 guard application.activationPolicy != .prohibited,
-                      let bundleID = application.bundleIdentifier
+                      let bundleID = application.bundleIdentifier,
+                      !excludedBundleIDs.contains(bundleID)
                 else {
                     return nil
                 }
@@ -275,7 +290,8 @@ final class AppAudioStore: ObservableObject {
 
     private func applicationDidLaunch(_ application: NSRunningApplication) {
         guard application.activationPolicy != .prohibited,
-              let bundleID = application.bundleIdentifier
+              let bundleID = application.bundleIdentifier,
+              !excludedBundleIDs.contains(bundleID)
         else {
             return
         }

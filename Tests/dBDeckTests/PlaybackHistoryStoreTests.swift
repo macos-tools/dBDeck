@@ -102,6 +102,19 @@ struct PlaybackHistoryStoreTests {
         #expect(PlaybackHistoryStore(defaults: defaults).records.first?.playbackSeconds == 180)
     }
 
+    @Test func removesExcludedRecordsAndTheirVisibilityState() throws {
+        let (defaults, suiteName) = try isolatedDefaults("RecordRemoval")
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let store = PlaybackHistoryStore(defaults: defaults)
+        let ownApp = observation("self", name: "dBDeck")
+        store.observe([ownApp], elapsed: 10)
+
+        store.removeRecords(for: [ownApp.bundleID])
+
+        #expect(!store.containsRecord(for: ownApp.bundleID))
+        #expect(PlaybackHistoryStore(defaults: defaults).records.isEmpty)
+    }
+
     @Test func visibilityMaintenanceRunsAtMostDailyAndPersists() throws {
         let (defaults, suiteName) = try isolatedDefaults("Visibility")
         defer { defaults.removePersistentDomain(forName: suiteName) }

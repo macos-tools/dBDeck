@@ -37,6 +37,20 @@ final class PlaybackHistoryStore {
         recordsByBundleID[bundleID] != nil
     }
 
+    func removeRecords(for bundleIDs: Set<String>) {
+        let recordsChanged = bundleIDs.reduce(into: false) { changed, bundleID in
+            changed = recordsByBundleID.removeValue(forKey: bundleID) != nil || changed
+        }
+        let hiddenChanged = !hiddenBundleIDs.isDisjoint(with: bundleIDs)
+        hiddenBundleIDs.subtract(bundleIDs)
+        if recordsChanged {
+            save()
+        }
+        if hiddenChanged {
+            saveVisibilityState()
+        }
+    }
+
     func observe(
         _ observations: [PlaybackObservation],
         elapsed: TimeInterval,

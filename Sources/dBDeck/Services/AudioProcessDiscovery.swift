@@ -24,6 +24,11 @@ struct AudioProcessDiscovery: AudioProcessDiscovering {
     }
 
     private let identityResolver = ApplicationIdentityResolver()
+    private let excludedBundleIDs: Set<String>
+
+    init(excludedBundleIDs: Set<String> = DBDeckApplicationIdentity.bundleIDs) {
+        self.excludedBundleIDs = excludedBundleIDs
+    }
 
     func activeApps() throws -> [AudioApp] {
         let runningApplications = Dictionary(
@@ -37,7 +42,7 @@ struct AudioProcessDiscovery: AudioProcessDiscovering {
                 pid: process.pid,
                 reportedBundleID: process.reportedBundleID,
                 runningApplications: runningApplications
-            ) else {
+            ), !excludedBundleIDs.contains(identity.bundleID) else {
                 return nil
             }
 
@@ -71,7 +76,19 @@ struct AudioProcessDiscovery: AudioProcessDiscovering {
     }
 
     func activeProcessObjectIDs() throws -> [AudioObjectID] {
-        try activeOutputProcesses().map(\.audioObjectID).sorted()
+        let runningApplications = Dictionary(
+            uniqueKeysWithValues: NSWorkspace.shared.runningApplications.map {
+                ($0.processIdentifier, $0)
+            }
+        )
+        return try activeProcesses().compactMap { process in
+            let runningBundleID = runningApplications[process.pid]?.bundleIdentifier
+            if process.reportedBundleID.map(excludedBundleIDs.contains) == true
+                || runningBundleID.map(excludedBundleIDs.contains) == true {
+                return nil
+            }
+            return process.audioObjectID
+        }.sorted()
     }
 
     private func activeProcesses() throws -> [ActiveProcess] {
