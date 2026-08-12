@@ -24,6 +24,16 @@ let package = Package(
                 .linkedFramework("AppKit"),
                 .linkedFramework("CoreAudio")
             ]
+        ),
+        .testTarget(
+            name: "dBDeckTests",
+            dependencies: ["dBDeck"],
+            path: "Tests/dBDeckTests"
+        ),
+        .testTarget(
+            name: "AudioDSPTests",
+            dependencies: ["AudioDSP"],
+            path: "Tests/AudioDSPTests"
         )
     ],
     swiftLanguageModes: [.v5]

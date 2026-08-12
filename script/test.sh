@@ -3,59 +3,24 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 VERIFY_DIR="$ROOT_DIR/.build/verification"
-VERIFY_BINARY="$VERIFY_DIR/verify-volume-preferences"
-DSP_VERIFY_BINARY="$VERIFY_DIR/verify-audio-dsp"
 DISCOVERY_VERIFY_BINARY="$VERIFY_DIR/verify-audio-discovery"
-HISTORY_VERIFY_BINARY="$VERIFY_DIR/verify-playback-history"
-DISPLAY_NAME_VERIFY_BINARY="$VERIFY_DIR/verify-application-display-name"
 FIXTURE_NAME="dBDeckAudioFixture"
 FIXTURE_BUNDLE_ID="com.dbdeck.tests.audio-fixture"
 FIXTURE_BUNDLE="$VERIFY_DIR/$FIXTURE_NAME.app"
 FIXTURE_BINARY="$FIXTURE_BUNDLE/Contents/MacOS/$FIXTURE_NAME"
 
+cd "$ROOT_DIR"
+if [[ -z "${DEVELOPER_DIR:-}" && -d /Applications/Xcode.app/Contents/Developer ]]; then
+  export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer
+fi
+xcrun swift test \
+  --disable-sandbox \
+  --enable-swift-testing \
+  --disable-xctest
+
 mkdir -p "$VERIFY_DIR/module-cache"
-pkill -x dBDeck >/dev/null 2>&1 || true
-
 swiftc \
-  -module-cache-path "$VERIFY_DIR/module-cache" \
-  "$ROOT_DIR/Sources/dBDeck/Models/AppVolumeSetting.swift" \
-  "$ROOT_DIR/Sources/dBDeck/Models/AppVolumeControl.swift" \
-  "$ROOT_DIR/Sources/dBDeck/Stores/VolumePreferences.swift" \
-  "$ROOT_DIR/Tests/dBDeckTests/VolumePreferencesTests.swift" \
-  -o "$VERIFY_BINARY"
-
-"$VERIFY_BINARY"
-
-swiftc \
-  -module-cache-path "$VERIFY_DIR/module-cache" \
-  "$ROOT_DIR/Sources/dBDeck/Models/AppPlaybackRecord.swift" \
-  "$ROOT_DIR/Sources/dBDeck/Support/ApplicationBundleResolver.swift" \
-  "$ROOT_DIR/Sources/dBDeck/Support/ApplicationDisplayNameResolver.swift" \
-  "$ROOT_DIR/Sources/dBDeck/Stores/PlaybackHistoryStore.swift" \
-  "$ROOT_DIR/Tests/dBDeckTests/PlaybackHistoryStoreTests.swift" \
-  -o "$HISTORY_VERIFY_BINARY"
-
-"$HISTORY_VERIFY_BINARY"
-
-swiftc \
-  -module-cache-path "$VERIFY_DIR/module-cache" \
-  "$ROOT_DIR/Sources/dBDeck/Support/ApplicationDisplayNameResolver.swift" \
-  "$ROOT_DIR/Tests/dBDeckTests/ApplicationDisplayNameResolverTests.swift" \
-  -o "$DISPLAY_NAME_VERIFY_BINARY"
-
-"$DISPLAY_NAME_VERIFY_BINARY"
-
-clang \
-  -std=c11 \
-  -I "$ROOT_DIR/Sources/AudioDSP/include" \
-  "$ROOT_DIR/Sources/AudioDSP/AudioDSP.c" \
-  "$ROOT_DIR/Tests/AudioDSPTests/AudioDSPVerifier.c" \
-  -framework CoreAudio \
-  -o "$DSP_VERIFY_BINARY"
-
-"$DSP_VERIFY_BINARY"
-
-swiftc \
+  -swift-version 5 \
   -module-cache-path "$VERIFY_DIR/module-cache" \
   -framework AppKit \
   -framework CoreAudio \
@@ -66,12 +31,13 @@ swiftc \
   "$ROOT_DIR/Sources/dBDeck/Support/ApplicationDisplayNameResolver.swift" \
   "$ROOT_DIR/Sources/dBDeck/Services/ApplicationIdentityResolver.swift" \
   "$ROOT_DIR/Sources/dBDeck/Services/AudioProcessDiscovery.swift" \
-  "$ROOT_DIR/Tests/dBDeckTests/AudioDiscoveryVerifier.swift" \
+  "$ROOT_DIR/Tests/Integration/AudioDiscoveryVerifier.swift" \
   -o "$DISCOVERY_VERIFY_BINARY"
 
 rm -rf "$FIXTURE_BUNDLE"
 mkdir -p "$(dirname "$FIXTURE_BINARY")"
 swiftc \
+  -swift-version 5 \
   -module-cache-path "$VERIFY_DIR/module-cache" \
   -framework AppKit \
   "$ROOT_DIR/Tests/Fixtures/AudioFixtureApp.swift" \

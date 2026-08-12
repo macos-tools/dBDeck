@@ -2,6 +2,7 @@ import Foundation
 
 enum AudioDiscoveryVerificationError: Error {
     case noActiveProcess
+    case unexpectedApplicationName(String)
 }
 
 @main
@@ -23,7 +24,7 @@ enum AudioDiscoveryVerifier {
             throw AudioDiscoveryVerificationError.noActiveProcess
         }
         guard matchedApp.name == "dBDeck Audio Fixture" else {
-            throw AudioDiscoveryVerificationError.noActiveProcess
+            throw AudioDiscoveryVerificationError.unexpectedApplicationName(matchedApp.name)
         }
         print("Audio application discovery passed: \(matchedApp.name)")
     }

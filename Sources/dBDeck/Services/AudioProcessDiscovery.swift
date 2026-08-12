@@ -2,7 +2,12 @@ import AppKit
 import CoreAudio
 import Foundation
 
-struct AudioProcessDiscovery {
+protocol AudioProcessDiscovering {
+    func activeApps() throws -> [AudioApp]
+    func activeProcessObjectIDs() throws -> [AudioObjectID]
+}
+
+struct AudioProcessDiscovery: AudioProcessDiscovering {
     private struct ActiveProcess {
         let audioObjectID: AudioObjectID
         let pid: pid_t

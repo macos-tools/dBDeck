@@ -1,12 +1,10 @@
 import Foundation
+import Testing
+@testable import dBDeck
 
-enum ApplicationDisplayNameResolverVerificationFailure: Error {
-    case unexpectedName(String)
-}
-
-@main
-enum ApplicationDisplayNameResolverVerifier {
-    static func main() throws {
+@Suite("Application display names")
+struct ApplicationDisplayNameResolverTests {
+    @Test func usesPreferredLocalizedDisplayName() throws {
         let temporaryRoot = FileManager.default.temporaryDirectory
             .appendingPathComponent("dBDeck-display-name-\(UUID().uuidString)")
         let applicationURL = temporaryRoot.appendingPathComponent("TencentMeeting.app")
@@ -30,18 +28,20 @@ enum ApplicationDisplayNameResolverVerifier {
             "CFBundleName": "腾讯会议"
         ]).write(to: localizationURL.appendingPathComponent("InfoPlist.strings"))
 
-        let name = ApplicationDisplayNameResolver.name(
-            for: applicationURL,
-            preferredLanguages: ["zh-Hans-CN"]
+        #expect(
+            ApplicationDisplayNameResolver.name(
+                for: applicationURL,
+                preferredLanguages: ["zh-Hans-CN"]
+            ) == "腾讯会议"
         )
-        guard name == "腾讯会议" else {
-            throw ApplicationDisplayNameResolverVerificationFailure.unexpectedName(name)
-        }
-
-        print("Localized application display name verification passed")
     }
 
-    private static func propertyListData(_ propertyList: [String: String]) throws -> Data {
+    @Test func fallsBackToApplicationFilename() {
+        let applicationURL = URL(fileURLWithPath: "/missing/Example App.app")
+        #expect(ApplicationDisplayNameResolver.name(for: applicationURL) == "Example App")
+    }
+
+    private func propertyListData(_ propertyList: [String: String]) throws -> Data {
         try PropertyListSerialization.data(
             fromPropertyList: propertyList,
             format: .xml,

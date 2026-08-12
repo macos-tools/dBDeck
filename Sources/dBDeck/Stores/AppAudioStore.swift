@@ -10,11 +10,11 @@ final class AppAudioStore: ObservableObject {
 
     private(set) var settings: [String: AppVolumeSetting]
 
-    private let discovery = AudioProcessDiscovery()
+    private let discovery: any AudioProcessDiscovering
     private let preferences: VolumePreferences
     private let playbackHistory: PlaybackHistoryStore
     private let historicalApplications = HistoricalApplicationResolver()
-    private let engine = AppAudioEngine()
+    private let engine: any AppAudioRouting
     private let logger = Logger(subsystem: "com.dbdeck.mac", category: "Energy")
     private var audioMonitor: AudioActivityMonitor?
     private var fallbackTimer: Timer?
@@ -31,24 +31,30 @@ final class AppAudioStore: ObservableObject {
 
     init(
         preferences: VolumePreferences = VolumePreferences(),
-        playbackHistory: PlaybackHistoryStore = PlaybackHistoryStore()
+        playbackHistory: PlaybackHistoryStore = PlaybackHistoryStore(),
+        discovery: any AudioProcessDiscovering = AudioProcessDiscovery(),
+        engine: any AppAudioRouting = AppAudioEngine(),
+        startsEventMonitoring: Bool = true
     ) {
         self.preferences = preferences
         self.playbackHistory = playbackHistory
+        self.discovery = discovery
+        self.engine = engine
         settings = preferences.load()
         cacheRunningApplications()
-        observeWorkspaceEvents()
-
-        do {
-            audioMonitor = try AudioActivityMonitor { [weak self] in
-                Task { @MainActor in
-                    self?.refresh()
+        if startsEventMonitoring {
+            observeWorkspaceEvents()
+            do {
+                audioMonitor = try AudioActivityMonitor { [weak self] in
+                    Task { @MainActor in
+                        self?.refresh()
+                    }
                 }
+                logger.info("Core Audio event monitoring started; idle polling is disabled")
+            } catch {
+                startFallbackPolling()
+                logger.error("Core Audio event monitoring failed; using 10-second fallback: \(error.localizedDescription, privacy: .public)")
             }
-            logger.info("Core Audio event monitoring started; idle polling is disabled")
-        } catch {
-            startFallbackPolling()
-            logger.error("Core Audio event monitoring failed; using 10-second fallback: \(error.localizedDescription, privacy: .public)")
         }
         refresh()
     }

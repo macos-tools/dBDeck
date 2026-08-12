@@ -1,7 +1,14 @@
 import CoreAudio
 import Foundation
 
-final class AppAudioEngine {
+protocol AppAudioRouting: AnyObject {
+    func apply(_ setting: AppVolumeSetting, to app: AudioApp) -> String?
+    func retainOnly(appIDs: Set<String>)
+    func retryFailures()
+    func stopAll()
+}
+
+final class AppAudioEngine: AppAudioRouting {
     private struct FailedConfiguration: Equatable {
         let processIDs: [AudioObjectID]
         let outputDeviceID: AudioObjectID
