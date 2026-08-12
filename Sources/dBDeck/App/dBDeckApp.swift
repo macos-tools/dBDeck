@@ -1,46 +1,17 @@
 import AppKit
 import SwiftUI
-#if DEBUG
-import WidgetKit
-#endif
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var store: AppAudioStore?
-    private var mixerPanelController: MixerPanelController?
+    private var statusItemController: StatusItemController?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        ProcessInfo.processInfo.disableAutomaticTermination("dBDeck audio service")
+        ProcessInfo.processInfo.disableAutomaticTermination("dBDeck menu bar service")
         ProcessInfo.processInfo.disableSuddenTermination()
         NSApp.setActivationPolicy(.accessory)
 
 #if DEBUG
         let arguments = ProcessInfo.processInfo.arguments
-        if arguments.contains("--verify-control") {
-            if #available(macOS 26.0, *) {
-                Task {
-                    do {
-                        let controls = try await ControlCenter.shared.currentControls()
-                        guard controls.contains(where: {
-                            $0.kind == "com.dbdeck.app.control.mixer"
-                        }) else {
-                            fputs("Control Center configuration verification failed\n", stderr)
-                            exit(EXIT_FAILURE)
-                        }
-                        print("Control Center configuration verification passed")
-                        fflush(stdout)
-                        exit(EXIT_SUCCESS)
-                    } catch {
-                        fputs("Control Center verification failed: \(error.localizedDescription)\n", stderr)
-                        exit(EXIT_FAILURE)
-                    }
-                }
-            } else {
-                fputs("Control Center verification requires macOS 26\n", stderr)
-                exit(EXIT_FAILURE)
-            }
-            return
-        }
-
         if let flagIndex = arguments.firstIndex(of: "--verify-route") {
             let pidIndex = arguments.index(after: flagIndex)
             let pid = pidIndex < arguments.endIndex ? pid_t(arguments[pidIndex]) : nil
@@ -65,22 +36,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         let store = AppAudioStore()
         self.store = store
-        mixerPanelController = MixerPanelController(store: store)
+        statusItemController = StatusItemController(store: store)
 
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { [weak self] in
-            self?.mixerPanelController?.show()
-
 #if DEBUG
-            if ProcessInfo.processInfo.arguments.contains("--verify-panel") {
-                guard self?.mixerPanelController?.isVisible == true else {
-                    fputs("Quick mixer panel verification failed\n", stderr)
-                    exit(EXIT_FAILURE)
+            if ProcessInfo.processInfo.arguments.contains("--verify-popover") {
+                self?.statusItemController?.performStatusItemClickForVerification()
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in
+                    guard self?.statusItemController?.isPopoverShown == true else {
+                        fputs("Menu bar button interaction verification failed\n", stderr)
+                        exit(EXIT_FAILURE)
+                    }
+                    print("Menu bar button interaction verification passed")
+                    fflush(stdout)
+                    exit(EXIT_SUCCESS)
                 }
-                print("Quick mixer panel verification passed")
-                fflush(stdout)
-                exit(EXIT_SUCCESS)
+                return
             }
 #endif
+            self?.statusItemController?.showPopover()
         }
     }
 
@@ -88,13 +62,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         _ sender: NSApplication,
         hasVisibleWindows flag: Bool
     ) -> Bool {
-        mixerPanelController?.show()
+        statusItemController?.showPopover()
         return true
-    }
-
-    func application(_ application: NSApplication, open urls: [URL]) {
-        guard urls.contains(where: { $0.scheme == "dbdeck" }) else { return }
-        mixerPanelController?.show()
     }
 }
 

@@ -1,7 +1,6 @@
 # dBDeck（音枢）
 
-dBDeck is a per-app audio controller for macOS. Its Control Center integration
-requires macOS 26 or later.
+dBDeck is a menu bar per-app audio controller for macOS 14.2 and later.
 
 ## Free MVP
 
@@ -11,12 +10,12 @@ requires macOS 26 or later.
 - Adjusts each app from 0–100% without changing system volume.
 - Mutes and unmutes individual apps.
 - Remembers volume and mute state by bundle identifier.
-- Runs without a persistent menu bar or Dock icon.
+- Runs as a menu-bar-only app with no Dock icon.
 
-The macOS 26 WidgetKit control uses a speaker icon in Control Center. Activating
-it opens the quick mixer near Control Center. Background daemons, nested helper
-apps, and raw process IDs are hidden or resolved to their containing application.
-Apps that have never produced audio do not appear.
+Launching the app opens its panel immediately. Opening it again, or clicking the
+speaker icon in the menu bar, reopens the same panel. Background daemons, nested
+helper apps, and raw process IDs are hidden or resolved to their containing
+application. Apps that have never produced audio do not appear.
 
 Audio stays on the Mac. dBDeck uses Apple's Core Audio Process Tap API, a private
 aggregate device, and a real-time gain callback. The first adjustment requires
@@ -54,8 +53,7 @@ build, run:
 
 ```sh
 ./script/verify_route.sh
-./script/verify_panel.sh
-./script/verify_control.sh
+./script/verify_popover.sh
 ```
 
 macOS asks for System Audio Recording permission the first time this route runs.
