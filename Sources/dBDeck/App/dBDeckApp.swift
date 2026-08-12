@@ -30,10 +30,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private let logger = Logger(subsystem: "com.dbdeck.mac", category: "App")
     private var mixerWindowController: NSWindowController?
+    private var statusItemController: StatusItemController?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         ProcessInfo.processInfo.disableAutomaticTermination("dBDeck menu bar service")
         ProcessInfo.processInfo.disableSuddenTermination()
+        statusItemController = StatusItemController(store: store)
 
         if MenuBarIcon.loadedFromBundle {
             logger.info("Menu bar template icon loaded from bundled SVG")
@@ -110,15 +112,8 @@ struct dBDeckApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
 
     var body: some Scene {
-        MenuBarExtra {
-            QuickMixerView(store: appDelegate.store)
-        } label: {
-            Image(nsImage: MenuBarIcon.image)
-                .resizable()
-                .scaledToFit()
-                .frame(width: 16, height: 16)
-                .accessibilityLabel("dBDeck")
+        Settings {
+            EmptyView()
         }
-        .menuBarExtraStyle(.window)
     }
 }
