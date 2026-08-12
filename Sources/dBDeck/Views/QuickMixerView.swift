@@ -81,7 +81,7 @@ struct QuickMixerView: View {
 
     private var footer: some View {
         HStack {
-            Text("Playing · Running · History")
+            Text("Only apps with playback history are shown")
                 .font(.caption2)
                 .foregroundStyle(.tertiary)
             Spacer()
