@@ -1,6 +1,8 @@
-# dBDeck（音量岛）
+<p align="center">
+  <img src="Resources/Assets.xcassets/AppIcon.appiconset/AppIcon-512.png" width="144" alt="dBDeck 应用图标">
+</p>
 
-[English](README.md)
+<h1 align="center">dBDeck / 音量岛</h1>
 
 dBDeck 是一款轻量的 macOS 菜单栏分应用音量控制工具，支持 macOS 14.2 及以上版本。
 
@@ -14,7 +16,7 @@ dBDeck 是一款轻量的 macOS 菜单栏分应用音量控制工具，支持 ma
 
 dBDeck 不会录制、存储或传输音频，也没有联网功能。音频处理只在本机进行。
 
-应用会在 `UserDefaults` 中保存以下本地数据：
+应用会在本机保存以下数据：
 
 - 应用标识号、显示名称和上次记录的应用路径。
 - 累计播放秒数和最近一次播放日期。
@@ -27,19 +29,10 @@ dBDeck 不会录制、存储或传输音频，也没有联网功能。音频处�
 
 ## 安装与首次启动
 
-每个 GitHub Release 都会提供 `dBDeck-<版本号>.dmg` 和对应的 SHA-256 校验文件。
-
-1. 从 Release 页面下载这两个文件。
+1. 从 Release 页面下载。
 2. 打开 DMG，将 dBDeck 拖入“应用程序”文件夹。
-3. 启动 dBDeck。它的图标会出现在菜单栏中，而不是 Dock 中。
+3. 启动 dBDeck，它的图标会出现在菜单栏（上方）中，而不是 Dock（下方） 中。
 4. macOS 请求“系统音频录制”权限时请允许，以便 dBDeck 调节各个应用的音量；如果系统提示，请重新启动 dBDeck。
-
-安装第一个版本前，可以在终端中校验下载文件：
-
-```sh
-cd ~/Downloads
-shasum -a 256 -c dBDeck-0.1.0.dmg.sha256
-```
 
 ### 打开当前未经公证的版本
 
