@@ -2,7 +2,7 @@
   <img src="Resources/Assets.xcassets/AppIcon.appiconset/AppIcon-512.png" width="144" alt="dBDeck app icon">
 </p>
 
-<h1 align="center">dBDeck / 音量岛</h1>
+<h1 align="center">dBDeck</h1>
 
 <p align="center"><a href="README.zh-CN.md">简体中文</a></p>
 

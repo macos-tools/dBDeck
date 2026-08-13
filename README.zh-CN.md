@@ -2,7 +2,7 @@
   <img src="Resources/Assets.xcassets/AppIcon.appiconset/AppIcon-512.png" width="144" alt="dBDeck 应用图标">
 </p>
 
-<h1 align="center">dBDeck / 音量岛</h1>
+<h1 align="center">音量岛</h1>
 
 dBDeck 是一款轻量的 macOS 菜单栏分应用音量控制工具，支持 macOS 14.2 及以上版本。
 
