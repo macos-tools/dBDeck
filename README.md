@@ -1,29 +1,55 @@
-# dBDeck（音枢）
+# dBDeck
 
-dBDeck is a menu bar per-app audio controller for macOS 14.2 and later.
+**Simplified Chinese: 音量岛** · [简体中文](README.zh-CN.md)
 
-## Free MVP
+dBDeck is a lightweight per-app volume controller for the macOS menu bar. It
+supports macOS 14.2 and later.
 
-- Remembers every identifiable app that has produced audio.
-- Ranks playing apps first, then running apps with history, then stopped apps
-  with history; each tier uses persisted playback seconds.
-- Shows all eligible apps in a scrollable quick mixer.
-- Adjusts each app from 0–200% without changing system volume.
-- Mutes and unmutes individual apps.
-- Remembers volume and mute state by bundle identifier.
-- Runs as a menu-bar-only app with no Dock icon.
+> dBDeck is currently an early, source-only release. The repository does not yet
+> provide a notarized app for end users.
 
-Launching the app installs its system-managed menu bar item. Clicking its
-three-fader icon opens the mixer panel. Background daemons, nested
-helper apps, and raw process IDs are hidden or resolved to their containing
-application. Apps that have never produced audio do not appear. Deleted apps are
-filtered from the interface while their small history records remain stored.
-When more than 10 installed apps have history, dormant entries older than seven
-days are hidden by maintenance that runs at most once per day.
+## Features
 
-Audio stays on the Mac. dBDeck uses Apple's Core Audio Process Tap API, a private
-aggregate device, and a real-time gain callback. The first adjustment requires
-macOS System Audio Recording permission.
+- Adjust each app from 0% to 200% without changing the system volume.
+- Mute and unmute individual apps.
+- Remember volume and mute state by bundle identifier.
+- Remember identifiable apps that have produced audio across launches.
+- Rank playing apps first, then running apps with playback history, then stopped
+  apps with history. Each group is ordered by accumulated playback time.
+- Show the eligible apps in a scrollable menu bar mixer with no Dock icon.
+- Use English or Simplified Chinese automatically, following the macOS language.
+
+Apps that have never produced audio do not appear. Background services, nested
+helper apps, and raw process IDs are hidden or resolved to their containing app.
+Deleted apps are filtered from the mixer while their small history records remain
+stored. When more than ten installed apps have history, stopped entries that have
+not played for over seven days are hidden by maintenance that runs at most once a
+day.
+
+At the default 100% volume with mute off, dBDeck removes its audio-processing
+route and lets audio pass through normally.
+
+## Privacy and permission
+
+dBDeck does not record, store, or transmit audio. It has no networking feature.
+Audio processing stays on the Mac.
+
+The app stores the following data locally in `UserDefaults`:
+
+- Bundle identifier, display name, and last known app path.
+- Accumulated playback seconds and the most recent playback date.
+- Per-app volume and mute state.
+- Which dormant records are hidden and when list maintenance last ran.
+
+dBDeck uses Apple's Core Audio Process Tap API, a private aggregate device, and a
+real-time gain callback. macOS requests **System Audio Recording** permission when
+an app is muted or set to a volume other than 100%. The 100% unmuted state does
+not keep a processing route active.
+
+## Requirements
+
+- macOS 14.2 or later.
+- Xcode 16 or a compatible Swift 6 toolchain.
 
 ## Build and run
 
@@ -31,8 +57,9 @@ macOS System Audio Recording permission.
 ./script/build_and_run.sh
 ```
 
-The script builds a signed development app at `dist/dBDeck.app` and launches it.
-The Codex Run button uses the same command.
+The script builds `dist/dBDeck.app`, applies an ad-hoc signature for local
+development, and launches it. This build is not Developer ID signed or notarized
+and is not intended for distribution.
 
 Optional modes:
 
@@ -42,31 +69,46 @@ Optional modes:
 ./script/build_and_run.sh --debug
 ```
 
-## Verify
+## Test
 
 ```sh
 ./script/test.sh
 ```
 
-This runs the standard Swift package test targets for settings persistence,
-second-level playback history and ranking, Store state transitions, localized
-application names, and real-time gain/mute sample processing. It then verifies
-Core Audio discovery against a real audio-producing app. The script does not stop
-an already running dBDeck instance.
+The test script runs the Swift package tests for settings persistence, playback
+history and ranking, store state transitions, localized app names, and real-time
+gain/mute sample processing. It also verifies Core Audio discovery against a real
+audio-producing fixture app. It does not stop an already running dBDeck instance.
 
-To verify the complete signed Process Tap and aggregate-device route in a Debug
-build, run:
+To verify the complete Process Tap and aggregate-device route in a Debug build:
 
 ```sh
 ./script/verify_route.sh
 ```
 
-macOS asks for System Audio Recording permission the first time this route runs.
-The route check verifies discovery plus Process Tap creation, gain changes, mute,
-and cleanup; exact sample values are asserted separately by the AudioDSP tests.
+macOS requests System Audio Recording permission the first time this route runs.
+The route check covers discovery, Process Tap creation, gain changes, mute, and
+cleanup. The AudioDSP tests separately assert exact sample values.
+
+## Implementation
+
+- SwiftUI `MenuBarExtra` for the system-managed menu bar item and mixer.
+- Core Audio Process Tap and a private aggregate device for per-app processing.
+- A small C real-time callback with atomic gain state for sample processing.
+- Local JSON-encoded playback history and volume preferences in `UserDefaults`.
 
 ## Current scope
 
-The free MVP follows the current default output device. Per-app device routing,
-ducking, profiles, EQ, shortcuts, CLI, Shortcuts, and Raycast integration remain
-future Pro work.
+The current version follows the system's default output device. Per-app output
+device routing, automatic ducking, profiles, EQ, global shortcuts, CLI, Shortcuts,
+and Raycast integration are not included.
+
+## Contributing
+
+Bug reports and focused pull requests are welcome. Please run `./script/test.sh`
+before submitting a code change.
+
+## License
+
+dBDeck is licensed under the [GNU General Public License version 3
+only](LICENSE) (`GPL-3.0-only`).
