@@ -5,16 +5,18 @@ MODE="${1:-run}"
 APP_NAME="dBDeck"
 BUNDLE_ID="com.dbdeck.mac"
 MIN_SYSTEM_VERSION="14.2"
+APP_VERSION="${DBDECK_APP_VERSION:-0.1.0}"
+BUILD_NUMBER="${DBDECK_BUILD_NUMBER:-6}"
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DIST_DIR="$ROOT_DIR/dist"
 VERIFY_DIR="$ROOT_DIR/.build/verification"
 
 case "$MODE" in
-  run|--debug|debug|--logs|logs|--telemetry|telemetry|--verify|verify|--stage|stage)
+  run|--debug|debug|--logs|logs|--telemetry|telemetry|--verify|verify|--stage|stage|--release-stage|release-stage)
     ;;
   *)
-    echo "usage: $0 [run|--debug|--logs|--telemetry|--verify|--stage]" >&2
+    echo "usage: $0 [run|--debug|--logs|--telemetry|--verify|--stage|--release-stage]" >&2
     exit 2
     ;;
 esac
@@ -37,6 +39,9 @@ case "$MODE" in
   --stage|stage)
     APP_BUNDLE="$VERIFY_DIR/$APP_NAME.app"
     ;;
+  --release-stage|release-stage)
+    APP_BUNDLE="$VERIFY_DIR/release/$APP_NAME.app"
+    ;;
   *)
     stop_app
     APP_BUNDLE="$DIST_DIR/$APP_NAME.app"
@@ -44,8 +49,43 @@ case "$MODE" in
 esac
 
 cd "$ROOT_DIR"
-swift build --disable-sandbox --product "$APP_NAME"
-BUILD_BINARY="$(swift build --disable-sandbox --show-bin-path)/$APP_NAME"
+if [[ "$MODE" == "--release-stage" || "$MODE" == "release-stage" ]]; then
+  RELEASE_BUILD_DIR="$ROOT_DIR/.build/release-universal"
+  ARM_BUILD_DIR="$RELEASE_BUILD_DIR/arm64"
+  INTEL_BUILD_DIR="$RELEASE_BUILD_DIR/x86_64"
+
+  swift build \
+    --disable-sandbox \
+    --configuration release \
+    --triple "arm64-apple-macosx$MIN_SYSTEM_VERSION" \
+    --scratch-path "$ARM_BUILD_DIR" \
+    --product "$APP_NAME"
+  ARM_BINARY="$(swift build \
+    --disable-sandbox \
+    --configuration release \
+    --triple "arm64-apple-macosx$MIN_SYSTEM_VERSION" \
+    --scratch-path "$ARM_BUILD_DIR" \
+    --show-bin-path)/$APP_NAME"
+
+  swift build \
+    --disable-sandbox \
+    --configuration release \
+    --triple "x86_64-apple-macosx$MIN_SYSTEM_VERSION" \
+    --scratch-path "$INTEL_BUILD_DIR" \
+    --product "$APP_NAME"
+  INTEL_BINARY="$(swift build \
+    --disable-sandbox \
+    --configuration release \
+    --triple "x86_64-apple-macosx$MIN_SYSTEM_VERSION" \
+    --scratch-path "$INTEL_BUILD_DIR" \
+    --show-bin-path)/$APP_NAME"
+
+  BUILD_BINARY="$RELEASE_BUILD_DIR/$APP_NAME"
+  /usr/bin/lipo -create "$ARM_BINARY" "$INTEL_BINARY" -output "$BUILD_BINARY"
+else
+  swift build --disable-sandbox --product "$APP_NAME"
+  BUILD_BINARY="$(swift build --disable-sandbox --show-bin-path)/$APP_NAME"
+fi
 
 mkdir -p "$(dirname "$APP_BUNDLE")"
 STAGING_DIR="$(mktemp -d "$(dirname "$APP_BUNDLE")/.dBDeck-stage.XXXXXX")"
@@ -105,9 +145,9 @@ cat >"$STAGED_INFO_PLIST" <<PLIST
   <key>CFBundlePackageType</key>
   <string>APPL</string>
   <key>CFBundleShortVersionString</key>
-  <string>0.1.0</string>
+  <string>$APP_VERSION</string>
   <key>CFBundleVersion</key>
-  <string>6</string>
+  <string>$BUILD_NUMBER</string>
   <key>LSMinimumSystemVersion</key>
   <string>$MIN_SYSTEM_VERSION</string>
   <key>LSUIElement</key>
@@ -161,6 +201,6 @@ case "$MODE" in
     test -n "$APP_PID"
     echo "$APP_NAME is running (PID $APP_PID)"
     ;;
-  --stage|stage)
+  --stage|stage|--release-stage|release-stage)
     ;;
 esac
