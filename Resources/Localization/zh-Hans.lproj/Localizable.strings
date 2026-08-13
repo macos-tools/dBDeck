@@ -1,3 +1,4 @@
+"dBDeck" = "音量岛";
 "No Playback History" = "暂无播放记录";
 "Apps appear here after they produce audio." = "应用播放过声音后会显示在这里。";
 "Playing, running, and playback history" = "正在播放、正在运行与播放记录";
@@ -8,7 +9,7 @@
 "Retry audio setup." = "重试音频设置。";
 "Retry" = "重试";
 "Only apps with playback history are shown" = "仅显示有播放记录的应用";
-"Quit dBDeck." = "退出 dBDeck。";
+"Quit dBDeck." = "退出音量岛。";
 "Quit" = "退出";
 "Playing now" = "正在播放";
 "Playing" = "播放中";

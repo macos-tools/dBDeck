@@ -9,7 +9,7 @@ enum MenuBarIcon {
             withExtension: "svg"
         ).flatMap(NSImage.init(contentsOf:)) ?? NSImage(
             systemSymbolName: "slider.vertical.3",
-            accessibilityDescription: "dBDeck"
+            accessibilityDescription: String(localized: "dBDeck")
         ) ?? NSImage(size: NSSize(width: 18, height: 18))
         image.isTemplate = true
         image.size = NSSize(width: 18, height: 18)
@@ -73,7 +73,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 rootView: QuickMixerView(store: store)
             )
             let window = NSWindow(contentViewController: hostingController)
-            window.title = "dBDeck"
+            window.title = String(localized: "dBDeck")
             window.styleMask = [.titled, .closable, .miniaturizable]
             window.setContentSize(NSSize(width: 380, height: 430))
             window.isReleasedWhenClosed = false
