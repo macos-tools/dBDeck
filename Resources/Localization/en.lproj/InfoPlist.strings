@@ -1,0 +1,3 @@
+"CFBundleDisplayName" = "dBDeck";
+"CFBundleName" = "dBDeck";
+"NSAudioCaptureUsageDescription" = "dBDeck needs access to system audio to adjust each app's volume on this Mac.";

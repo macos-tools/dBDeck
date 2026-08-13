@@ -19,7 +19,7 @@ struct AppVolumeRow: View {
                         Circle()
                             .fill(.green)
                             .frame(width: 6, height: 6)
-                            .help("Playing now")
+                            .help(String(localized: "Playing now"))
                     }
                     Text(app.name)
                         .lineLimit(1)
@@ -29,16 +29,18 @@ struct AppVolumeRow: View {
                             .font(.caption)
                             .foregroundStyle(app.isPlaying ? .green : .secondary)
                     }
-                    Text(setting.isMuted ? "Muted" : "\(Int(setting.volume * 100))%")
+                    Text(
+                        setting.isMuted
+                            ? String(localized: "Muted")
+                            : "\(Int(setting.volume * 100))%"
+                    )
                         .font(.caption.monospacedDigit())
                         .foregroundStyle(.secondary)
                 }
 
                 HStack(spacing: 8) {
                     InteractiveButton(
-                        helpText: setting.isMuted
-                            ? "Unmute \(app.name)"
-                            : "Mute \(app.name)",
+                        helpText: muteHelpText,
                         contentPadding: EdgeInsets(
                             top: 4,
                             leading: 4,
@@ -67,9 +69,16 @@ struct AppVolumeRow: View {
     }
 
     private var activityLabel: String? {
-        if app.isPlaying { return "Playing" }
-        if app.isRunning { return "Running" }
+        if app.isPlaying { return String(localized: "Playing") }
+        if app.isRunning { return String(localized: "Running") }
         return nil
+    }
+
+    private var muteHelpText: String {
+        let format = setting.isMuted
+            ? String(localized: "Unmute %@")
+            : String(localized: "Mute %@")
+        return String(format: format, locale: .current, app.name)
     }
 
     private var setting: AppVolumeSetting {

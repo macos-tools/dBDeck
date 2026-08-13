@@ -6,7 +6,22 @@ struct CoreAudioFailure: LocalizedError {
     let status: OSStatus
 
     var errorDescription: String? {
-        "\(operation) failed (\(statusDescription))"
+        let localizedOperation = NSLocalizedString(
+            operation,
+            bundle: .main,
+            comment: "Core Audio operation"
+        )
+        let format = NSLocalizedString(
+            "%@ failed (%@)",
+            bundle: .main,
+            comment: "Core Audio failure with operation and status"
+        )
+        return String(
+            format: format,
+            locale: .current,
+            localizedOperation,
+            statusDescription
+        )
     }
 
     private var statusDescription: String {

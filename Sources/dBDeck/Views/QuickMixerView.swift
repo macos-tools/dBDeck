@@ -62,11 +62,14 @@ struct QuickMixerView: View {
                 Text("Playing, running, and playback history")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.85)
+                    .allowsTightening(true)
             }
             Spacer()
             HStack(spacing: 12) {
                 InteractiveButton(
-                    helpText: "Rescan audio apps and playback state.",
+                    helpText: String(localized: "Rescan audio apps and playback state."),
                     action: store.manualRefresh
                 ) {
                     Image(systemName: "arrow.clockwise")
@@ -75,7 +78,9 @@ struct QuickMixerView: View {
                 .accessibilityLabel("Refresh audio apps")
 
                 InteractiveButton(
-                    helpText: "Reset all volumes to 100%.\n100% uses the least energy.",
+                    helpText: String(
+                        localized: "Reset all volumes to 100%.\n100% uses the least energy."
+                    ),
                     action: store.resetAllVolumes
                 ) {
                     Image(systemName: "arrow.uturn.backward")
@@ -98,7 +103,7 @@ struct QuickMixerView: View {
                 .textSelection(.enabled)
             Spacer(minLength: 4)
             InteractiveButton(
-                helpText: "Retry audio setup.",
+                helpText: String(localized: "Retry audio setup."),
                 contentPadding: EdgeInsets(top: 3, leading: 6, bottom: 3, trailing: 6),
                 action: store.retry
             ) {
@@ -115,9 +120,12 @@ struct QuickMixerView: View {
             Text("Only apps with playback history are shown")
                 .font(.caption2)
                 .foregroundStyle(.tertiary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.85)
+                .allowsTightening(true)
             Spacer()
             InteractiveButton(
-                helpText: "Quit dBDeck.",
+                helpText: String(localized: "Quit dBDeck."),
                 contentPadding: EdgeInsets(top: 4, leading: 7, bottom: 4, trailing: 7),
                 action: store.quit
             ) {
