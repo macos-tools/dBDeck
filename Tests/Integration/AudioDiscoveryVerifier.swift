@@ -14,7 +14,7 @@ enum AudioDiscoveryVerifier {
         let expectedBundleID = ProcessInfo.processInfo.arguments[1]
         var matchedApp: AudioApp?
         for _ in 0..<30 {
-            matchedApp = try AudioProcessDiscovery().activeApps().first {
+            matchedApp = try AudioProcessDiscovery().snapshot().apps.first {
                 $0.bundleID == expectedBundleID
             }
             if matchedApp != nil { break }

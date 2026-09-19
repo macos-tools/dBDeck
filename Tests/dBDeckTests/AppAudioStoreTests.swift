@@ -32,7 +32,11 @@ struct AppAudioStoreTests {
         let (defaults, suiteName) = try isolatedDefaults("VisibleRefresh")
         defer { defaults.removePersistentDomain(forName: suiteName) }
         let original = audioApp("player", name: "Player", processID: 21)
-        let discovery = StubAudioDiscovery(apps: [original])
+        // 99 stands for a process discovery sees but never publishes, such as an
+        // excluded or unresolvable one. Deriving the comparison baseline from
+        // the published app list would mismatch on it every single tick and
+        // turn the fast path into a full refresh once a second.
+        let discovery = StubAudioDiscovery(apps: [original], extraSignatureIDs: [99])
         let store = AppAudioStore(
             preferences: VolumePreferences(defaults: defaults),
             playbackHistory: PlaybackHistoryStore(defaults: defaults),
@@ -41,16 +45,16 @@ struct AppAudioStoreTests {
             startsEventMonitoring: false
         )
 
-        #expect(discovery.activeAppsCallCount == 1)
+        #expect(discovery.snapshotCallCount == 1)
         store.refreshVisiblePlaybackState()
-        #expect(discovery.activeAppsCallCount == 1)
+        #expect(discovery.snapshotCallCount == 1)
 
         let replacement = audioApp("player", name: "Player", processID: 22)
         discovery.apps = [replacement]
-        discovery.activeObjectIDs = replacement.processIDs
+        discovery.signature = [22, 99]
         store.refreshVisiblePlaybackState()
 
-        #expect(discovery.activeAppsCallCount == 2)
+        #expect(discovery.snapshotCallCount == 2)
         #expect(store.apps.first?.processIDs == [22])
     }
 
@@ -109,21 +113,21 @@ struct AppAudioStoreTests {
 
 private final class StubAudioDiscovery: AudioProcessDiscovering {
     var apps: [AudioApp]
-    var activeObjectIDs: [AudioObjectID]
-    private(set) var activeAppsCallCount = 0
+    var signature: [AudioObjectID]
+    private(set) var snapshotCallCount = 0
 
-    init(apps: [AudioApp]) {
+    init(apps: [AudioApp], extraSignatureIDs: [AudioObjectID] = []) {
         self.apps = apps
-        activeObjectIDs = apps.flatMap(\.processIDs).sorted()
+        signature = (apps.flatMap(\.processIDs) + extraSignatureIDs).sorted()
     }
 
-    func activeApps() throws -> [AudioApp] {
-        activeAppsCallCount += 1
-        return apps
+    func snapshot() throws -> DiscoverySnapshot {
+        snapshotCallCount += 1
+        return DiscoverySnapshot(signature: signature, apps: apps)
     }
 
-    func activeProcessObjectIDs() throws -> [AudioObjectID] {
-        activeObjectIDs
+    func processSignature() throws -> [AudioObjectID] {
+        signature
     }
 }
 

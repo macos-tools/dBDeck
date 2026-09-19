@@ -2,27 +2,22 @@ import AppKit
 import CoreAudio
 import Foundation
 
+/// One traversal's worth of discovery: the resolved apps, plus the raw process
+/// list they were derived from.
+struct DiscoverySnapshot {
+    /// Audio-process object IDs producing output, before identity resolution or
+    /// exclusion. Core Audio property reads only — no AppKit, no disk, no
+    /// sysctl — so it is cheap enough to poll as a change signal.
+    let signature: [AudioObjectID]
+    let apps: [AudioApp]
+}
+
 protocol AudioProcessDiscovering {
-    func activeApps() throws -> [AudioApp]
-    func activeProcessObjectIDs() throws -> [AudioObjectID]
+    func snapshot() throws -> DiscoverySnapshot
+    func processSignature() throws -> [AudioObjectID]
 }
 
 struct AudioProcessDiscovery: AudioProcessDiscovering {
-    private struct ActiveProcess {
-        let audioObjectID: AudioObjectID
-        let pid: pid_t
-        let reportedBundleID: String?
-    }
-
-    private struct ProcessRecord {
-        let audioObjectID: AudioObjectID
-        let identity: ApplicationIdentity
-
-        var stableID: String {
-            identity.bundleID
-        }
-    }
-
     private let identityResolver = ApplicationIdentityResolver()
     private let excludedBundleIDs: Set<String>
 
@@ -30,10 +25,36 @@ struct AudioProcessDiscovery: AudioProcessDiscovering {
         self.excludedBundleIDs = excludedBundleIDs
     }
 
-    func activeApps() throws -> [AudioApp] {
-        let records = try resolvedProcessRecords()
+    func processSignature() throws -> [AudioObjectID] {
+        try activeOutputProcesses().map(\.audioObjectID).sorted()
+    }
 
-        return Dictionary(grouping: records, by: \.stableID)
+    func snapshot() throws -> DiscoverySnapshot {
+        let processes = try activeOutputProcesses()
+        let runningApplications = Dictionary(
+            // `processIdentifier` is -1 for apps without a pid, so keys can repeat.
+            NSWorkspace.shared.runningApplications.map { ($0.processIdentifier, $0) },
+            uniquingKeysWith: { _, latest in latest }
+        )
+
+        let resolved = processes.compactMap {
+            process -> (audioObjectID: AudioObjectID, identity: ApplicationIdentity)? in
+            let reportedBundleID = try? CoreAudioSupport.readString(
+                objectID: process.audioObjectID,
+                selector: kAudioProcessPropertyBundleID,
+                operation: "Read audio process bundle ID"
+            )
+            guard let identity = identityResolver.resolve(
+                pid: process.pid,
+                reportedBundleID: reportedBundleID,
+                runningApplications: runningApplications
+            ), !excludedBundleIDs.contains(identity.bundleID) else {
+                return nil
+            }
+            return (process.audioObjectID, identity)
+        }
+
+        let apps = Dictionary(grouping: resolved, by: { $0.identity.bundleID })
             .map { _, group in
                 AudioApp(
                     identity: group[0].identity,
@@ -43,6 +64,11 @@ struct AudioProcessDiscovery: AudioProcessDiscovering {
                 )
             }
             .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+
+        return DiscoverySnapshot(
+            signature: processes.map(\.audioObjectID).sorted(),
+            apps: apps
+        )
     }
 
 #if DEBUG
@@ -54,51 +80,6 @@ struct AudioProcessDiscovery: AudioProcessDiscovering {
             .sorted()
     }
 #endif
-
-    func activeProcessObjectIDs() throws -> [AudioObjectID] {
-        try resolvedProcessRecords()
-            .map(\.audioObjectID)
-            .sorted()
-    }
-
-    private func resolvedProcessRecords() throws -> [ProcessRecord] {
-        // `processIdentifier` is -1 for apps without a pid, so keys can repeat.
-        let runningApplications = Dictionary(
-            NSWorkspace.shared.runningApplications.map {
-                ($0.processIdentifier, $0)
-            },
-            uniquingKeysWith: { _, latest in latest }
-        )
-
-        return try activeProcesses().compactMap { process -> ProcessRecord? in
-            guard let identity = identityResolver.resolve(
-                pid: process.pid,
-                reportedBundleID: process.reportedBundleID,
-                runningApplications: runningApplications
-            ), !excludedBundleIDs.contains(identity.bundleID) else {
-                return nil
-            }
-
-            return ProcessRecord(
-                audioObjectID: process.audioObjectID,
-                identity: identity
-            )
-        }
-    }
-
-    private func activeProcesses() throws -> [ActiveProcess] {
-        try activeOutputProcesses().map { process in
-            ActiveProcess(
-                audioObjectID: process.audioObjectID,
-                pid: process.pid,
-                reportedBundleID: try? CoreAudioSupport.readString(
-                    objectID: process.audioObjectID,
-                    selector: kAudioProcessPropertyBundleID,
-                    operation: "Read audio process bundle ID"
-                )
-            )
-        }
-    }
 
     private func activeOutputProcesses() throws -> [(audioObjectID: AudioObjectID, pid: pid_t)] {
         let processObjectIDs = try CoreAudioSupport.readObjectIDs(

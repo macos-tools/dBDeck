@@ -1,5 +1,6 @@
 import AppKit
 import Combine
+import CoreAudio
 import Foundation
 import OSLog
 
@@ -31,18 +32,19 @@ final class AppAudioStore: ObservableObject {
     private var volumeControls: [String: AppVolumeControl] = [:]
     private var operationErrorMessage: String?
     private var routeErrorsByAppID: [String: String] = [:]
+    private var lastProcessSignature: [AudioObjectID]?
 
     init(
         preferences: VolumePreferences = VolumePreferences(),
         playbackHistory: PlaybackHistoryStore = PlaybackHistoryStore(),
-        discovery: any AudioProcessDiscovering = AudioProcessDiscovery(),
+        discovery: (any AudioProcessDiscovering)? = nil,
         engine: any AppAudioRouting = AppAudioEngine(),
         excludedBundleIDs: Set<String> = DBDeckApplicationIdentity.bundleIDs,
         startsEventMonitoring: Bool = true
     ) {
         self.preferences = preferences
         self.playbackHistory = playbackHistory
-        self.discovery = discovery
+        self.discovery = discovery ?? AudioProcessDiscovery(excludedBundleIDs: excludedBundleIDs)
         self.engine = engine
         self.excludedBundleIDs = excludedBundleIDs
         let savedSettings = preferences.load()
@@ -149,12 +151,10 @@ final class AppAudioStore: ObservableObject {
 
     func refreshVisiblePlaybackState() {
         do {
-            let discoveredProcesses = try discovery.activeProcessObjectIDs()
-            let publishedProcesses = apps
-                .filter(\.isPlaying)
-                .flatMap(\.processIDs)
-                .sorted()
-            guard discoveredProcesses != publishedProcesses else { return }
+            // Compared against what discovery last reported, not against the
+            // published list: the published list is filtered and identity
+            // resolved, so deriving the baseline from it would never match.
+            guard try discovery.processSignature() != lastProcessSignature else { return }
         } catch {
             operationErrorMessage = error.localizedDescription
             publishErrorMessage()
@@ -166,8 +166,8 @@ final class AppAudioStore: ObservableObject {
     func refresh() {
         do {
             let now = Date()
-            let activeApps = try discovery.activeApps()
-            refresh(activeApps: activeApps, now: now)
+            let snapshot = try discovery.snapshot()
+            refresh(snapshot: snapshot, now: now)
         } catch {
             operationErrorMessage = error.localizedDescription
             publishErrorMessage()
@@ -203,8 +203,9 @@ final class AppAudioStore: ObservableObject {
         }
     }
 
-    private func refresh(activeApps: [AudioApp], now: Date) {
-        let activeApps = activeApps.filter {
+    private func refresh(snapshot: DiscoverySnapshot, now: Date) {
+        lastProcessSignature = snapshot.signature
+        let activeApps = snapshot.apps.filter {
             !excludedBundleIDs.contains($0.bundleID)
         }
         accountCurrentPlayback(until: now)
