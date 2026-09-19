@@ -12,6 +12,10 @@ final class PlaybackHistoryStore {
     private var recordsByBundleID: [String: AppPlaybackRecord]
     private var hiddenBundleIDs: Set<String>
     private var lastVisibilityMaintenanceAt: Date?
+    /// Only records written by older versions can name a bundle nested inside
+    /// another app; discovery canonicalizes before writing. Tracking whether any
+    /// remain keeps the merge scan off the steady-state path.
+    private var mayHaveNestedRecords: Bool
 
     init(
         defaults: UserDefaults = .standard,
@@ -21,12 +25,18 @@ final class PlaybackHistoryStore {
         self.storageKey = storageKey
         hiddenBundleIDsKey = storageKey + ".hiddenBundleIDs"
         lastVisibilityMaintenanceKey = storageKey + ".lastVisibilityMaintenanceAt"
-        recordsByBundleID = Self.load(defaults: defaults, storageKey: storageKey)
+        let loaded = Self.load(defaults: defaults, storageKey: storageKey)
+        recordsByBundleID = loaded.records
+        mayHaveNestedRecords = loaded.records.values.contains(where: Self.isNested)
         hiddenBundleIDs = Set(defaults.stringArray(forKey: hiddenBundleIDsKey) ?? [])
         lastVisibilityMaintenanceAt = defaults.object(
             forKey: lastVisibilityMaintenanceKey
         ) as? Date
-        save()
+        // Re-encoding every record on launch is wasted work unless loading
+        // actually rewrote something.
+        if loaded.didNormalize {
+            save()
+        }
     }
 
     var records: [AppPlaybackRecord] {
@@ -62,17 +72,19 @@ final class PlaybackHistoryStore {
         let creditedSeconds = max(elapsed, 0)
 
         for observation in observations {
-            let nestedRecordIDs = recordsByBundleID.values.compactMap { record -> String? in
-                guard
-                    record.bundleID != observation.bundleID,
-                    let appPath = observation.bundlePath,
-                    let recordPath = record.bundlePath,
-                    recordPath.hasPrefix(appPath + "/")
-                else {
-                    return nil
+            let nestedRecordIDs = mayHaveNestedRecords
+                ? recordsByBundleID.values.compactMap { record -> String? in
+                    guard
+                        record.bundleID != observation.bundleID,
+                        let appPath = observation.bundlePath,
+                        let recordPath = record.bundlePath,
+                        recordPath.hasPrefix(appPath + "/")
+                    else {
+                        return nil
+                    }
+                    return record.bundleID
                 }
-                return record.bundleID
-            }
+                : []
             let inheritedSeconds = nestedRecordIDs.reduce(0) {
                 $0 + (recordsByBundleID[$1]?.playbackSeconds ?? 0)
             }
@@ -105,36 +117,59 @@ final class PlaybackHistoryStore {
                 needsSave = true
             }
             recordsByBundleID[observation.bundleID] = record
+            if existingRecord == nil, Self.isNested(record) {
+                mayHaveNestedRecords = true
+            }
         }
 
         if needsSave {
             save()
+            mayHaveNestedRecords = recordsByBundleID.values.contains(where: Self.isNested)
         }
+    }
+
+    /// True when the record names a bundle that lives inside another `.app`.
+    /// Pure path arithmetic — no disk access.
+    private static func isNested(_ record: AppPlaybackRecord) -> Bool {
+        guard let bundlePath = record.bundlePath else { return false }
+        let originalURL = URL(fileURLWithPath: bundlePath).standardizedFileURL
+        guard let applicationURL = ApplicationBundleResolver
+            .outermostApplicationURL(containing: originalURL)
+        else {
+            return false
+        }
+        return applicationURL != originalURL
     }
 
     func prioritizedRecords(
         playingBundleIDs: Set<String>,
         runningBundleIDs: Set<String>
     ) -> [AppPlaybackRecord] {
-        records.sorted { lhs, rhs in
-            let lhsPriority = priority(
-                for: lhs.bundleID,
-                playingBundleIDs: playingBundleIDs,
-                runningBundleIDs: runningBundleIDs
-            )
-            let rhsPriority = priority(
-                for: rhs.bundleID,
-                playingBundleIDs: playingBundleIDs,
-                runningBundleIDs: runningBundleIDs
-            )
-            if lhsPriority != rhsPriority {
-                return lhsPriority < rhsPriority
+        // Decorate once rather than recomputing both operands' priority on every
+        // comparison. The name tie-break stays locale-aware: collapsing it to a
+        // plain string compare would reorder non-ASCII app names.
+        recordsByBundleID.values
+            .map { record in
+                (
+                    priority: priority(
+                        for: record.bundleID,
+                        playingBundleIDs: playingBundleIDs,
+                        runningBundleIDs: runningBundleIDs
+                    ),
+                    record: record
+                )
             }
-            if lhs.playbackSeconds != rhs.playbackSeconds {
-                return lhs.playbackSeconds > rhs.playbackSeconds
+            .sorted { lhs, rhs in
+                if lhs.priority != rhs.priority {
+                    return lhs.priority < rhs.priority
+                }
+                if lhs.record.playbackSeconds != rhs.record.playbackSeconds {
+                    return lhs.record.playbackSeconds > rhs.record.playbackSeconds
+                }
+                return lhs.record.name
+                    .localizedCaseInsensitiveCompare(rhs.record.name) == .orderedAscending
             }
-            return lhs.name.localizedCaseInsensitiveCompare(rhs.name) == .orderedAscending
-        }
+            .map(\.record)
     }
 
     func updateHiddenRecordsIfNeeded(
@@ -197,22 +232,28 @@ final class PlaybackHistoryStore {
     private static func load(
         defaults: UserDefaults,
         storageKey: String
-    ) -> [String: AppPlaybackRecord] {
+    ) -> (records: [String: AppPlaybackRecord], didNormalize: Bool) {
         guard
             let data = defaults.data(forKey: storageKey),
             let records = try? JSONDecoder().decode([AppPlaybackRecord].self, from: data)
         else {
-            return [:]
+            return ([:], false)
         }
         var normalizedRecords: [String: AppPlaybackRecord] = [:]
+        var didNormalize = false
         for decodedRecord in records {
 #if DEBUG
             guard !decodedRecord.bundleID.hasPrefix("com.dbdeck.tests.") else {
+                didNormalize = true
                 continue
             }
 #endif
             let record = canonicalizedRecord(decodedRecord)
+            if record != decodedRecord {
+                didNormalize = true
+            }
             if var existing = normalizedRecords[record.bundleID] {
+                didNormalize = true
                 existing.playbackSeconds += record.playbackSeconds
                 if record.lastPlayedAt > existing.lastPlayedAt {
                     existing.name = record.name
@@ -224,7 +265,7 @@ final class PlaybackHistoryStore {
                 normalizedRecords[record.bundleID] = record
             }
         }
-        return normalizedRecords
+        return (normalizedRecords, didNormalize)
     }
 
     private static func canonicalizedRecord(
@@ -236,15 +277,14 @@ final class PlaybackHistoryStore {
             let applicationURL = ApplicationBundleResolver
                 .outermostApplicationURL(containing: originalURL),
             applicationURL != originalURL,
-            let bundle = Bundle(url: applicationURL),
-            let bundleID = bundle.bundleIdentifier
+            let identity = ApplicationIdentityResolver.identity(forApplicationURL: applicationURL)
         else {
             return record
         }
 
         return AppPlaybackRecord(
-            bundleID: bundleID,
-            name: ApplicationDisplayNameResolver.name(for: applicationURL),
+            bundleID: identity.bundleID,
+            name: identity.name,
             bundlePath: applicationURL.path,
             playbackSeconds: record.playbackSeconds,
             lastPlayedAt: record.lastPlayedAt

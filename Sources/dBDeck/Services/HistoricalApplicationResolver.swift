@@ -2,22 +2,23 @@ import AppKit
 import Foundation
 
 final class HistoricalApplicationResolver {
-    private struct Metadata {
-        let bundleURL: URL
-        let name: String
-        let icon: NSImage
+    /// How long a resolved app is trusted to still be installed before its path
+    /// is stat'd again. Without a budget every history row cost a syscall on
+    /// every refresh, including cache hits.
+    static let availabilityRecheckInterval: TimeInterval = 10
+
+    private struct CachedIdentity {
+        let identity: ApplicationIdentity
+        var verifiedAt: Date
     }
 
-    private var metadataByBundleID: [String: Metadata] = [:]
+    private var identitiesByBundleID: [String: CachedIdentity] = [:]
     private var unavailableBundleIDs = Set<String>()
 
     func audioApp(from record: AppPlaybackRecord, isRunning: Bool) -> AudioApp? {
-        guard let metadata = metadata(for: record) else { return nil }
+        guard let identity = identity(for: record) else { return nil }
         return AudioApp(
-            bundleID: record.bundleID,
-            name: metadata.name,
-            icon: metadata.icon,
-            bundleURL: metadata.bundleURL,
+            identity: identity,
             processIDs: [],
             isPlaying: false,
             isRunning: isRunning
@@ -30,27 +31,43 @@ final class HistoricalApplicationResolver {
 
     func retryAllUnavailableApplications() {
         unavailableBundleIDs.removeAll()
+        // Drop resolved names and icons too, so an explicit rescan picks up an
+        // app that was moved, renamed or updated in place.
+        identitiesByBundleID.removeAll()
     }
 
-    private func metadata(for record: AppPlaybackRecord) -> Metadata? {
+    private func identity(
+        for record: AppPlaybackRecord,
+        now: Date = Date()
+    ) -> ApplicationIdentity? {
         guard !unavailableBundleIDs.contains(record.bundleID) else { return nil }
-        if let cached = metadataByBundleID[record.bundleID],
-           isAvailableApplicationURL(cached.bundleURL) {
-            return cached
-        }
-        metadataByBundleID[record.bundleID] = nil
 
-        guard let bundleURL = installedApplicationURL(for: record) else {
+        if var cached = identitiesByBundleID[record.bundleID] {
+            guard now.timeIntervalSince(cached.verifiedAt) >= Self.availabilityRecheckInterval
+            else {
+                return cached.identity
+            }
+            if let bundleURL = cached.identity.bundleURL,
+               isAvailableApplicationURL(bundleURL) {
+                cached.verifiedAt = now
+                identitiesByBundleID[record.bundleID] = cached
+                return cached.identity
+            }
+            identitiesByBundleID[record.bundleID] = nil
+        }
+
+        guard
+            let bundleURL = installedApplicationURL(for: record),
+            let identity = ApplicationIdentityResolver.identity(forApplicationURL: bundleURL)
+        else {
             unavailableBundleIDs.insert(record.bundleID)
             return nil
         }
-        let metadata = Metadata(
-            bundleURL: bundleURL,
-            name: ApplicationDisplayNameResolver.name(for: bundleURL),
-            icon: NSWorkspace.shared.icon(forFile: bundleURL.path)
+        identitiesByBundleID[record.bundleID] = CachedIdentity(
+            identity: identity,
+            verifiedAt: now
         )
-        metadataByBundleID[record.bundleID] = metadata
-        return metadata
+        return identity
     }
 
     private func installedApplicationURL(for record: AppPlaybackRecord) -> URL? {

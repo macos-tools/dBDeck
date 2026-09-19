@@ -35,12 +35,8 @@ struct AudioProcessDiscovery: AudioProcessDiscovering {
 
         return Dictionary(grouping: records, by: \.stableID)
             .map { _, group in
-                let identity = group[0].identity
-                return AudioApp(
-                    bundleID: identity.bundleID,
-                    name: identity.name,
-                    icon: identity.icon,
-                    bundleURL: identity.bundleURL,
+                AudioApp(
+                    identity: group[0].identity,
                     processIDs: group.map(\.audioObjectID).sorted(),
                     isPlaying: true,
                     isRunning: true

@@ -142,6 +142,7 @@ final class AppAudioStore: ObservableObject {
 
     func manualRefresh() {
         engine.retryFailures()
+        ApplicationDisplayNameResolver.clearCache()
         historicalApplications.retryAllUnavailableApplications()
         refresh()
     }

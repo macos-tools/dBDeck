@@ -22,7 +22,7 @@ struct ApplicationIdentityResolver {
 
             if let applicationURL = NSWorkspace.shared.urlForApplication(
                 withBundleIdentifier: reportedBundleID
-            ), let identity = identity(forApplicationURL: applicationURL) {
+            ), let identity = Self.identity(forApplicationURL: applicationURL) {
                 return identity
             }
         }
@@ -39,7 +39,7 @@ struct ApplicationIdentityResolver {
         }
 
         if let bundleURL = application.bundleURL,
-           let identity = identity(forApplicationURL: bundleURL) {
+           let identity = Self.identity(forApplicationURL: bundleURL) {
             return identity
         }
 
@@ -58,7 +58,10 @@ struct ApplicationIdentityResolver {
         )
     }
 
-    private func identity(forApplicationURL url: URL) -> ApplicationIdentity? {
+    /// The one place that decides an installed app's bundle ID, name and icon
+    /// from a URL. Shared so history and live discovery cannot label the same
+    /// app differently.
+    static func identity(forApplicationURL url: URL) -> ApplicationIdentity? {
         guard let applicationURL = ApplicationBundleResolver
             .outermostApplicationURL(containing: url),
               let bundle = Bundle(url: applicationURL),

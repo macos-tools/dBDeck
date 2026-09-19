@@ -13,6 +13,25 @@ struct AudioApp: Identifiable {
     let isRunning: Bool
 }
 
+extension AudioApp {
+    init(
+        identity: ApplicationIdentity,
+        processIDs: [AudioObjectID],
+        isPlaying: Bool,
+        isRunning: Bool
+    ) {
+        self.init(
+            bundleID: identity.bundleID,
+            name: identity.name,
+            icon: identity.icon,
+            bundleURL: identity.bundleURL,
+            processIDs: processIDs,
+            isPlaying: isPlaying,
+            isRunning: isRunning
+        )
+    }
+}
+
 extension AudioApp: Equatable {
     /// `icon` is deliberately excluded: `NSWorkspace.icon(forFile:)` hands back a
     /// fresh `NSImage` per call, so comparing it would defeat change detection.
