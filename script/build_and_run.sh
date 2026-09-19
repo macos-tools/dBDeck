@@ -148,12 +148,18 @@ cat >"$STAGED_INFO_PLIST" <<PLIST
   <string>$APP_VERSION</string>
   <key>CFBundleVersion</key>
   <string>$BUILD_NUMBER</string>
+  <key>ITSAppUsesNonExemptEncryption</key>
+  <false/>
+  <key>LSApplicationCategoryType</key>
+  <string>public.app-category.utilities</string>
   <key>LSMinimumSystemVersion</key>
   <string>$MIN_SYSTEM_VERSION</string>
   <key>LSUIElement</key>
   <true/>
   <key>NSAudioCaptureUsageDescription</key>
   <string>dBDeck needs access to system audio to adjust each app's volume on this Mac.</string>
+  <key>NSHumanReadableCopyright</key>
+  <string>Copyright © 2026 linger. Licensed under the Apache License 2.0.</string>
   <key>NSPrincipalClass</key>
   <string>NSApplication</string>
 </dict>

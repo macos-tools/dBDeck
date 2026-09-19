@@ -87,4 +87,4 @@ open "/Applications/dBDeck.app"
 
 ## 许可证
 
-dBDeck 采用 [GNU 通用公共许可证第 3 版，仅限该版本](LICENSE)（`GPL-3.0-only`）。
+dBDeck 采用 [Apache 许可证 2.0 版](LICENSE)（`Apache-2.0`）。

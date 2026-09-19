@@ -89,4 +89,4 @@ Bug reports and focused pull requests are welcome. Please run `./script/test.sh`
 
 ## License
 
-dBDeck is licensed under the [GNU General Public License version 3 only](LICENSE) (`GPL-3.0-only`).
+dBDeck is licensed under the [Apache License 2.0](LICENSE) (`Apache-2.0`).
