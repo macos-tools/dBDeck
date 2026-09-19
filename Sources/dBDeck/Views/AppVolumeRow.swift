@@ -61,16 +61,30 @@ struct AppVolumeRow: View {
                     Slider(
                         value: Binding(
                             get: { control.setting.volume },
-                            set: { onVolumeChange($0) }
+                            set: { onVolumeChange(Self.draggedVolume($0)) }
                         ),
-                        in: 0...AppVolumeSetting.maximumVolume,
-                        step: 0.01
+                        in: 0...AppVolumeSetting.maximumVolume
                     )
                     .disabled(setting.isMuted)
                 }
             }
         }
         .padding(.vertical, 4)
+    }
+
+    /// How close to 100% counts as 100%.
+    ///
+    /// Unmuted 100% is passthrough: no tap, no processing, least energy. On a
+    /// continuous 0-200% track that exact point is a single pixel, so the
+    /// slider detents onto it rather than leaving it unreachable by hand.
+    private static let passthroughSnap = 0.05
+
+    /// Quantizes a slider position to the resolution the row displays, so the
+    /// readout does not wander while the value under it does.
+    private static func draggedVolume(_ volume: Double) -> Double {
+        let passthrough = AppVolumeSetting.passthrough.volume
+        guard abs(volume - passthrough) > passthroughSnap else { return passthrough }
+        return (volume * 100).rounded() / 100
     }
 
     private var activityLabel: String? {

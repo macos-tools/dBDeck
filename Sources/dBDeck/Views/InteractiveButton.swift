@@ -37,6 +37,10 @@ struct InteractiveButton<Label: View>: View {
                 .contentShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
         }
         .buttonStyle(InteractiveButtonStyle(isHovering: isHovering))
+        // These are pointer targets in a dense panel rather than a keyboard
+        // path through it, so a focus ring on one of them reads as a stray
+        // selection rather than as guidance.
+        .focusEffectDisabled()
         .onHover { hovering in
             isHovering = hovering
         }

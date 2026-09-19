@@ -74,13 +74,13 @@ Optional modes:
 Create the release DMGs and checksums, one per architecture:
 
 ```sh
-./script/package_dmg.sh 0.2.0
+./script/package_dmg.sh 0.2.1
 ```
 
 Each build targets a single architecture, so a download carries only the code the Mac it lands on can run. The artifacts are written to:
 
-- `dist/dBDeck-0.2.0-arm64.dmg` and `dist/dBDeck-0.2.0-arm64.dmg.sha256`
-- `dist/dBDeck-0.2.0-x86_64.dmg` and `dist/dBDeck-0.2.0-x86_64.dmg.sha256`
+- `dist/dBDeck-0.2.1-arm64.dmg` and `dist/dBDeck-0.2.1-arm64.dmg.sha256`
+- `dist/dBDeck-0.2.1-x86_64.dmg` and `dist/dBDeck-0.2.1-x86_64.dmg.sha256`
 
 ## Current scope
 

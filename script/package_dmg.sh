@@ -5,11 +5,11 @@ set -euo pipefail
 # contains only the code the machine it lands on can actually run.
 
 APP_NAME="dBDeck"
-RELEASE_VERSION="${1:-0.2.0}"
+RELEASE_VERSION="${1:-0.2.1}"
 ARCHITECTURES=(arm64 x86_64)
 
 if [[ ! "$RELEASE_VERSION" =~ ^[0-9]+(\.[0-9]+){1,2}$ ]]; then
-  echo "usage: $0 [numeric-version, for example 0.2.0]" >&2
+  echo "usage: $0 [numeric-version, for example 0.2.1]" >&2
   exit 2
 fi
 
