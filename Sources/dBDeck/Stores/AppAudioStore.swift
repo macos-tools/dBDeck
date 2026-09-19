@@ -21,11 +21,13 @@ final class AppAudioStore: ObservableObject {
     private var fallbackTimer: Timer?
     private var playbackCheckpointTimer: Timer?
     private var preferencesSaveTimer: Timer?
-    private var settingsNeedSave = false
     private var workspaceObservers: [NSObjectProtocol] = []
     private var runningApplicationBundleIDsByPID: [pid_t: String] = [:]
-    private var currentPlaybackObservations: [PlaybackObservation] = []
-    private var lastPlaybackAccountingDate: Date?
+    // Several PIDs can share a bundle ID, so the set needs reference counts to
+    // know when the last instance of an app has gone.
+    private var runningBundleIDCounts: [String: Int] = [:]
+    private var runningBundleIDs: Set<String> = []
+    private var playbackAccounting: (observations: [PlaybackObservation], since: Date)?
     private var volumeControls: [String: AppVolumeControl] = [:]
     private var operationErrorMessage: String?
     private var routeErrorsByAppID: [String: String] = [:]
@@ -52,9 +54,13 @@ final class AppAudioStore: ObservableObject {
             preferences.save(settings)
         }
         playbackHistory.removeRecords(for: excludedBundleIDs)
-        cacheRunningApplications()
         if startsEventMonitoring {
             observeWorkspaceEvents()
+        }
+        // Snapshot after registering: an app that launches in between is then
+        // reported by the notification rather than missing from both.
+        cacheRunningApplications()
+        if startsEventMonitoring {
             do {
                 audioMonitor = try AudioActivityMonitor { [weak self] change in
                     Task { @MainActor in
@@ -118,7 +124,7 @@ final class AppAudioStore: ObservableObject {
         for control in volumeControls.values {
             control.update(.passthrough)
         }
-        settingsNeedSave = true
+        schedulePreferencesSave()
         persistSettings()
 
         engine.stopAll()
@@ -182,7 +188,6 @@ final class AppAudioStore: ObservableObject {
         guard settings[app.id] != newSetting else { return }
         settings[app.id] = newSetting
         volumeControls[app.id]?.update(newSetting)
-        settingsNeedSave = true
         schedulePreferencesSave()
         if app.isPlaying {
             engine.retryFailure(for: app.id)
@@ -211,8 +216,7 @@ final class AppAudioStore: ObservableObject {
             )
         }
         playbackHistory.observe(observations, elapsed: 0, now: now)
-        currentPlaybackObservations = observations
-        lastPlaybackAccountingDate = observations.isEmpty ? nil : now
+        playbackAccounting = observations.isEmpty ? nil : (observations, now)
         updatePlaybackCheckpointTimer()
         rebuildVisibleApps(activeApps: activeApps, now: now)
 
@@ -237,6 +241,26 @@ final class AppAudioStore: ObservableObject {
             },
             uniquingKeysWith: { _, latest in latest }
         )
+        runningBundleIDCounts = runningApplicationBundleIDsByPID.values.reduce(into: [:]) {
+            counts, bundleID in
+            counts[bundleID, default: 0] += 1
+        }
+        runningBundleIDs = Set(runningBundleIDCounts.keys)
+    }
+
+    private func retainRunningBundleID(_ bundleID: String) {
+        runningBundleIDCounts[bundleID, default: 0] += 1
+        runningBundleIDs.insert(bundleID)
+    }
+
+    private func releaseRunningBundleID(_ bundleID: String) {
+        guard let count = runningBundleIDCounts[bundleID] else { return }
+        if count <= 1 {
+            runningBundleIDCounts[bundleID] = nil
+            runningBundleIDs.remove(bundleID)
+        } else {
+            runningBundleIDCounts[bundleID] = count - 1
+        }
     }
 
     /// `nil` for apps this mixer never tracks. Note that `processIdentifier` is
@@ -252,58 +276,68 @@ final class AppAudioStore: ObservableObject {
     }
 
     private func observeWorkspaceEvents() {
-        let notificationCenter = NSWorkspace.shared.notificationCenter
-        workspaceObservers.append(notificationCenter.addObserver(
-            forName: NSWorkspace.didLaunchApplicationNotification,
-            object: nil,
-            queue: .main
-        ) { [weak self] notification in
-            guard let application = notification.userInfo?[NSWorkspace.applicationUserInfoKey]
-                as? NSRunningApplication
-            else {
-                return
+        observeWorkspaceApplication(NSWorkspace.didLaunchApplicationNotification) {
+            store, application in
+            store.applicationDidLaunch(application)
+        }
+        observeWorkspaceApplication(NSWorkspace.didTerminateApplicationNotification) {
+            store, application in
+            store.applicationDidTerminate(application)
+        }
+        observeWorkspace(NSWorkspace.willSleepNotification) { store in
+            store.prepareForSleep()
+        }
+        observeWorkspace(NSWorkspace.didWakeNotification) { store in
+            store.refresh()
+        }
+    }
+
+    /// Delivered on `.main`, so the body is already main-actor isolated.
+    private func observeWorkspace(
+        _ name: NSNotification.Name,
+        _ body: @escaping @MainActor (AppAudioStore) -> Void
+    ) {
+        workspaceObservers.append(
+            NSWorkspace.shared.notificationCenter.addObserver(
+                forName: name,
+                object: nil,
+                queue: .main
+            ) { [weak self] _ in
+                MainActor.assumeIsolated {
+                    guard let self else { return }
+                    body(self)
+                }
             }
-            Task { @MainActor in
-                self?.applicationDidLaunch(application)
+        )
+    }
+
+    private func observeWorkspaceApplication(
+        _ name: NSNotification.Name,
+        _ body: @escaping @MainActor (AppAudioStore, NSRunningApplication) -> Void
+    ) {
+        workspaceObservers.append(
+            NSWorkspace.shared.notificationCenter.addObserver(
+                forName: name,
+                object: nil,
+                queue: .main
+            ) { [weak self] notification in
+                guard let application = notification.userInfo?[NSWorkspace.applicationUserInfoKey]
+                    as? NSRunningApplication
+                else {
+                    return
+                }
+                MainActor.assumeIsolated {
+                    guard let self else { return }
+                    body(self, application)
+                }
             }
-        })
-        workspaceObservers.append(notificationCenter.addObserver(
-            forName: NSWorkspace.didTerminateApplicationNotification,
-            object: nil,
-            queue: .main
-        ) { [weak self] notification in
-            guard let application = notification.userInfo?[NSWorkspace.applicationUserInfoKey]
-                as? NSRunningApplication
-            else {
-                return
-            }
-            Task { @MainActor in
-                self?.applicationDidTerminate(application)
-            }
-        })
-        workspaceObservers.append(notificationCenter.addObserver(
-            forName: NSWorkspace.willSleepNotification,
-            object: nil,
-            queue: .main
-        ) { [weak self] _ in
-            Task { @MainActor in
-                self?.prepareForSleep()
-            }
-        })
-        workspaceObservers.append(notificationCenter.addObserver(
-            forName: NSWorkspace.didWakeNotification,
-            object: nil,
-            queue: .main
-        ) { [weak self] _ in
-            Task { @MainActor in
-                self?.refresh()
-            }
-        })
+        )
     }
 
     private func applicationDidLaunch(_ application: NSRunningApplication) {
         guard let bundleID = trackedBundleID(of: application) else { return }
         runningApplicationBundleIDsByPID[application.processIdentifier] = bundleID
+        retainRunningBundleID(bundleID)
         historicalApplications.retryUnavailableApplication(bundleID: bundleID)
         guard playbackHistory.containsRecord(for: bundleID) else { return }
         refresh()
@@ -315,71 +349,69 @@ final class AppAudioStore: ObservableObject {
         ) else {
             return
         }
+        releaseRunningBundleID(bundleID)
         guard playbackHistory.containsRecord(for: bundleID) else { return }
         refresh()
     }
 
+    /// A live timer is what "there are unsaved changes" means here.
     private func schedulePreferencesSave() {
         preferencesSaveTimer?.invalidate()
-        preferencesSaveTimer = Timer.scheduledTimer(
-            withTimeInterval: 0.25,
-            repeats: false
-        ) { [weak self] _ in
-            Task { @MainActor in
-                self?.persistSettings()
-            }
+        preferencesSaveTimer = scheduledTimer(after: 0.25, repeats: false) { store in
+            store.persistSettings()
         }
     }
 
     private func persistSettings() {
+        guard preferencesSaveTimer != nil else { return }
         preferencesSaveTimer?.invalidate()
         preferencesSaveTimer = nil
-        guard settingsNeedSave else { return }
-        settingsNeedSave = false
         preferences.save(settings)
     }
 
     private func accountCurrentPlayback(until now: Date) {
-        guard !currentPlaybackObservations.isEmpty,
-              let lastPlaybackAccountingDate
-        else {
-            return
-        }
-        let elapsed = max(now.timeIntervalSince(lastPlaybackAccountingDate), 0)
+        guard let playbackAccounting else { return }
+        let elapsed = max(now.timeIntervalSince(playbackAccounting.since), 0)
         guard elapsed > 0 else { return }
-        playbackHistory.observe(currentPlaybackObservations, elapsed: elapsed, now: now)
-        self.lastPlaybackAccountingDate = now
+        playbackHistory.observe(playbackAccounting.observations, elapsed: elapsed, now: now)
+        self.playbackAccounting = (playbackAccounting.observations, now)
     }
 
     private func updatePlaybackCheckpointTimer() {
-        if currentPlaybackObservations.isEmpty {
+        guard playbackAccounting != nil else {
             playbackCheckpointTimer?.invalidate()
             playbackCheckpointTimer = nil
             return
         }
         guard playbackCheckpointTimer == nil else { return }
-        playbackCheckpointTimer = Timer.scheduledTimer(
-            withTimeInterval: 60,
-            repeats: true
-        ) { [weak self] _ in
-            Task { @MainActor in
-                self?.refresh()
-            }
+        playbackCheckpointTimer = scheduledTimer(after: 60, repeats: true) { store in
+            store.refresh()
         }
     }
 
     private func prepareForSleep() {
         accountCurrentPlayback(until: Date())
-        currentPlaybackObservations = []
-        lastPlaybackAccountingDate = nil
+        playbackAccounting = nil
         updatePlaybackCheckpointTimer()
     }
 
     private func startFallbackPolling() {
-        fallbackTimer = Timer.scheduledTimer(withTimeInterval: 10, repeats: true) {
-            [weak self] _ in
-            Task { @MainActor in
-                self?.refresh()
+        fallbackTimer = scheduledTimer(after: 10, repeats: true) { store in
+            store.refresh()
+        }
+    }
+
+    /// Timers scheduled here fire on the main run loop, so the body is already
+    /// main-actor isolated and needs no hop.
+    private func scheduledTimer(
+        after interval: TimeInterval,
+        repeats: Bool,
+        _ body: @escaping @MainActor (AppAudioStore) -> Void
+    ) -> Timer {
+        Timer.scheduledTimer(withTimeInterval: interval, repeats: repeats) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                body(self)
             }
         }
     }
@@ -387,6 +419,11 @@ final class AppAudioStore: ObservableObject {
     private func publishAppsIfChanged(_ refreshedApps: [AudioApp]) {
         guard apps != refreshedApps else { return }
         apps = refreshedApps
+        // Nothing renders a row for an app that is not published, so no view can
+        // still be observing its control. Without this the map grows for the
+        // lifetime of the process.
+        let visibleAppIDs = Set(refreshedApps.map(\.id))
+        volumeControls = volumeControls.filter { visibleAppIDs.contains($0.key) }
     }
 
     private func rebuildVisibleApps(activeApps: [AudioApp], now: Date) {
@@ -394,7 +431,6 @@ final class AppAudioStore: ObservableObject {
             uniqueKeysWithValues: activeApps.map { ($0.bundleID, $0) }
         )
         let activeBundleIDs = Set(activeAppsByBundleID.keys)
-        let runningBundleIDs = Set(runningApplicationBundleIDsByPID.values)
         let installedRecordsAndApps = playbackHistory
             .prioritizedRecords(
                 playingBundleIDs: activeBundleIDs,
