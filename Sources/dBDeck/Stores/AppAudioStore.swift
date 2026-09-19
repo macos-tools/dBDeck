@@ -394,8 +394,12 @@ final class AppAudioStore: ObservableObject {
             return
         }
         guard playbackCheckpointTimer == nil else { return }
+        // Only advances the playback clock. It used to run a full refresh —
+        // Core Audio discovery, list rebuild and re-applying every route — to
+        // credit elapsed seconds, which is all it actually needs. Change
+        // detection is the monitor's job.
         playbackCheckpointTimer = scheduledTimer(after: 60, repeats: true) { store in
-            store.refresh()
+            store.accountCurrentPlayback(until: Date())
         }
     }
 
