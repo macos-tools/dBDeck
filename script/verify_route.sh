@@ -2,6 +2,7 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/toolchain.sh"
 VERIFY_DIR="$ROOT_DIR/.build/verification"
 TEST_AUDIO="$VERIFY_DIR/route-test.aiff"
 APP_BINARY="$VERIFY_DIR/dBDeck.app/Contents/MacOS/dBDeck"

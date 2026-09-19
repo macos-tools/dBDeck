@@ -2,6 +2,7 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/toolchain.sh"
 VERIFY_DIR="$ROOT_DIR/.build/verification"
 DISCOVERY_VERIFY_BINARY="$VERIFY_DIR/verify-audio-discovery"
 FIXTURE_NAME="dBDeckAudioFixture"
@@ -10,9 +11,6 @@ FIXTURE_BUNDLE="$VERIFY_DIR/$FIXTURE_NAME.app"
 FIXTURE_BINARY="$FIXTURE_BUNDLE/Contents/MacOS/$FIXTURE_NAME"
 
 cd "$ROOT_DIR"
-if [[ -z "${DEVELOPER_DIR:-}" && -d /Applications/Xcode.app/Contents/Developer ]]; then
-  export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer
-fi
 xcrun swift test \
   --disable-sandbox \
   --enable-swift-testing \

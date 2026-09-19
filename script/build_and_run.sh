@@ -10,6 +10,7 @@ APP_VERSION="${DBDECK_APP_VERSION:-0.2.1}"
 BUILD_NUMBER="${DBDECK_BUILD_NUMBER:-8}"
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/toolchain.sh"
 DIST_DIR="$ROOT_DIR/dist"
 VERIFY_DIR="$ROOT_DIR/.build/verification"
 
@@ -98,23 +99,19 @@ cp "$ROOT_DIR/Resources/dBDeckMenuBarIcon.svg" "$STAGED_RESOURCES/dBDeckMenuBarI
 cp -R "$ROOT_DIR/Resources/Localization/." "$STAGED_RESOURCES/"
 chmod +x "$STAGED_BINARY"
 
-if [[ -x /Applications/Xcode.app/Contents/Developer/usr/bin/actool ]]; then
-  ASSET_OUTPUT="$STAGING_DIR/asset-output"
-  mkdir -p "$ASSET_OUTPUT"
-  DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer xcrun actool \
-    "$ASSET_CATALOG" \
-    --compile "$ASSET_OUTPUT" \
-    --platform macosx \
-    --minimum-deployment-target "$MIN_SYSTEM_VERSION" \
-    --app-icon AppIcon \
-    --output-partial-info-plist "$STAGING_DIR/asset-info.plist" \
-    --warnings \
-    --errors
-  cp "$ASSET_OUTPUT/AppIcon.icns" "$STAGED_RESOURCES/AppIcon.icns"
-  cp "$ASSET_OUTPUT/Assets.car" "$STAGED_RESOURCES/Assets.car"
-else
-  cp "$ROOT_DIR/Resources/dBDeck.icns" "$STAGED_RESOURCES/AppIcon.icns"
-fi
+ASSET_OUTPUT="$STAGING_DIR/asset-output"
+mkdir -p "$ASSET_OUTPUT"
+xcrun actool \
+  "$ASSET_CATALOG" \
+  --compile "$ASSET_OUTPUT" \
+  --platform macosx \
+  --minimum-deployment-target "$MIN_SYSTEM_VERSION" \
+  --app-icon AppIcon \
+  --output-partial-info-plist "$STAGING_DIR/asset-info.plist" \
+  --warnings \
+  --errors
+cp "$ASSET_OUTPUT/AppIcon.icns" "$STAGED_RESOURCES/AppIcon.icns"
+cp "$ASSET_OUTPUT/Assets.car" "$STAGED_RESOURCES/Assets.car"
 
 cat >"$STAGED_INFO_PLIST" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
