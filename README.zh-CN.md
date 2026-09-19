@@ -72,10 +72,10 @@ open "/Applications/dBDeck.app"
 使用以下命令生成同时支持 Apple 芯片和 Intel Mac 的发布 DMG 与校验文件：
 
 ```sh
-./script/package_dmg.sh 0.1.0
+./script/package_dmg.sh 0.2.0
 ```
 
-产物会写入 `dist/dBDeck-0.1.0.dmg` 和 `dist/dBDeck-0.1.0.dmg.sha256`。
+产物会写入 `dist/dBDeck-0.2.0.dmg` 和 `dist/dBDeck-0.2.0.dmg.sha256`。
 
 ## 当前范围
 

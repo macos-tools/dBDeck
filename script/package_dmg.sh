@@ -2,7 +2,7 @@
 set -euo pipefail
 
 APP_NAME="dBDeck"
-RELEASE_VERSION="${1:-0.1.0}"
+RELEASE_VERSION="${1:-0.2.0}"
 
 if [[ ! "$RELEASE_VERSION" =~ ^[0-9]+(\.[0-9]+){1,2}$ ]]; then
   echo "usage: $0 [numeric-version, for example 0.1.0]" >&2

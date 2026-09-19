@@ -74,10 +74,10 @@ Optional modes:
 Create a release DMG and checksum that support both Apple silicon and Intel Macs:
 
 ```sh
-./script/package_dmg.sh 0.1.0
+./script/package_dmg.sh 0.2.0
 ```
 
-The artifacts are written to `dist/dBDeck-0.1.0.dmg` and `dist/dBDeck-0.1.0.dmg.sha256`.
+The artifacts are written to `dist/dBDeck-0.2.0.dmg` and `dist/dBDeck-0.2.0.dmg.sha256`.
 
 ## Current scope
 
