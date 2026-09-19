@@ -56,9 +56,16 @@ final class AppAudioStore: ObservableObject {
         if startsEventMonitoring {
             observeWorkspaceEvents()
             do {
-                audioMonitor = try AudioActivityMonitor { [weak self] in
+                audioMonitor = try AudioActivityMonitor { [weak self] change in
                     Task { @MainActor in
-                        self?.refresh()
+                        guard let self else { return }
+                        if change.contains(.defaultOutputDevice) {
+                            // A new output device is a fresh chance to route, so
+                            // do not make the user wait out a backoff earned
+                            // against the device they just switched away from.
+                            self.engine.retryFailures()
+                        }
+                        self.refresh()
                     }
                 }
                 logger.info("Core Audio event monitoring started; idle polling is disabled")
@@ -212,8 +219,10 @@ final class AppAudioStore: ObservableObject {
         let activeAppIDs = Set(activeApps.map(\.id))
         engine.retainOnly(appIDs: activeAppIDs)
         routeErrorsByAppID = routeErrorsByAppID.filter { activeAppIDs.contains($0.key) }
-        for app in activeApps {
-            applyRoute(setting(for: app), to: app)
+        engine.withOutputDeviceCached {
+            for app in activeApps {
+                applyRoute(setting(for: app), to: app)
+            }
         }
         operationErrorMessage = nil
         publishErrorMessage()

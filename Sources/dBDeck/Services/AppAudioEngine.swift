@@ -3,6 +3,7 @@ import Foundation
 
 protocol AppAudioRouting: AnyObject {
     func apply(_ setting: AppVolumeSetting, to app: AudioApp) -> String?
+    func withOutputDeviceCached(_ body: () -> Void)
     func retainOnly(appIDs: Set<String>)
     func retryFailure(for appID: String)
     func retryFailures()
@@ -37,6 +38,9 @@ final class AppAudioEngine: AppAudioRouting {
     private var routes: [String: AudioRoute] = [:]
     private var failures: [String: RouteFailure] = [:]
 
+    private var isCachingOutputDevice = false
+    private var cachedOutputDeviceUID: Result<String, Error>?
+
     private let currentOutputDeviceUID: () throws -> String
     private let makeRoute: (String, [AudioObjectID], Float) throws -> AudioRoute
     private let now: () -> Date
@@ -63,7 +67,7 @@ final class AppAudioEngine: AppAudioRouting {
 
         let outputDeviceUID: String
         do {
-            outputDeviceUID = try currentOutputDeviceUID()
+            outputDeviceUID = try resolvedOutputDeviceUID()
         } catch {
             return error.localizedDescription
         }
@@ -91,6 +95,28 @@ final class AppAudioEngine: AppAudioRouting {
             failures[app.id] = backingOff(from: failures[app.id], message: message)
             return message
         }
+    }
+
+    /// Reads the output device once for the duration of `body` rather than once
+    /// per app. The cache cannot outlive the call, so it can never go stale.
+    func withOutputDeviceCached(_ body: () -> Void) {
+        isCachingOutputDevice = true
+        defer {
+            isCachingOutputDevice = false
+            cachedOutputDeviceUID = nil
+        }
+        body()
+    }
+
+    private func resolvedOutputDeviceUID() throws -> String {
+        if let cachedOutputDeviceUID {
+            return try cachedOutputDeviceUID.get()
+        }
+        let result = Result { try currentOutputDeviceUID() }
+        if isCachingOutputDevice {
+            cachedOutputDeviceUID = result
+        }
+        return try result.get()
     }
 
     func retainOnly(appIDs: Set<String>) {

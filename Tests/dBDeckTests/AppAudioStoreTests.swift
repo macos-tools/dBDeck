@@ -138,6 +138,10 @@ private final class StubAudioEngine: AppAudioRouting {
         failures[app.id]
     }
 
+    func withOutputDeviceCached(_ body: () -> Void) {
+        body()
+    }
+
     func retainOnly(appIDs: Set<String>) {
         failures = failures.filter { appIDs.contains($0.key) }
     }

@@ -50,6 +50,31 @@ enum CoreAudioSupport {
         AudioObjectPropertyAddress(mSelector: selector, mScope: scope, mElement: element)
     }
 
+    @discardableResult
+    static func addPropertyListener(
+        objectID: AudioObjectID,
+        selector: AudioObjectPropertySelector,
+        scope: AudioObjectPropertyScope = kAudioObjectPropertyScopeGlobal,
+        queue: DispatchQueue,
+        listener: @escaping AudioObjectPropertyListenerBlock
+    ) -> OSStatus {
+        var propertyAddress = address(selector, scope: scope)
+        return AudioObjectAddPropertyListenerBlock(objectID, &propertyAddress, queue, listener)
+    }
+
+    /// Core Audio matches a listener on address, queue and block, so removal has
+    /// to be handed the same three values the registration used.
+    static func removePropertyListener(
+        objectID: AudioObjectID,
+        selector: AudioObjectPropertySelector,
+        scope: AudioObjectPropertyScope = kAudioObjectPropertyScopeGlobal,
+        queue: DispatchQueue,
+        listener: @escaping AudioObjectPropertyListenerBlock
+    ) {
+        var propertyAddress = address(selector, scope: scope)
+        AudioObjectRemovePropertyListenerBlock(objectID, &propertyAddress, queue, listener)
+    }
+
     static func check(_ status: OSStatus, operation: String) throws {
         guard status == noErr else {
             throw CoreAudioFailure(operation: operation, status: status)
@@ -87,24 +112,26 @@ enum CoreAudioSupport {
         )
         guard size > 0 else { return [] }
 
-        var values = [AudioObjectID](
-            repeating: kAudioObjectUnknown,
-            count: Int(size) / MemoryLayout<AudioObjectID>.stride
-        )
+        let stride = MemoryLayout<AudioObjectID>.stride
+        var values = [AudioObjectID](repeating: kAudioObjectUnknown, count: Int(size) / stride)
+        guard !values.isEmpty else { return [] }
+
         try values.withUnsafeMutableBytes { buffer in
+            guard let baseAddress = buffer.baseAddress else {
+                throw CoreAudioFailure(
+                    operation: operation,
+                    status: kAudioHardwareUnspecifiedError
+                )
+            }
             try check(
-                AudioObjectGetPropertyData(
-                    objectID,
-                    &propertyAddress,
-                    0,
-                    nil,
-                    &size,
-                    buffer.baseAddress!
-                ),
+                AudioObjectGetPropertyData(objectID, &propertyAddress, 0, nil, &size, baseAddress),
                 operation: operation
             )
         }
-        return values
+        // The read rewrites `size` with what was actually returned. The process
+        // list changes constantly, so it can shrink between the two calls and
+        // leave trailing kAudioObjectUnknown entries in the buffer.
+        return Array(values.prefix(Int(size) / stride))
     }
 
     static func readString(

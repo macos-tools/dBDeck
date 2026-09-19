@@ -2,81 +2,109 @@ import CoreAudio
 import Foundation
 import OSLog
 
+/// What Core Audio reported changing since the last delivered notification.
+struct AudioChange: OptionSet {
+    let rawValue: Int
+
+    static let processList = AudioChange(rawValue: 1 << 0)
+    static let defaultOutputDevice = AudioChange(rawValue: 1 << 1)
+    static let processOutputState = AudioChange(rawValue: 1 << 2)
+}
+
 /// Watches Core Audio state changes without polling while the system is idle.
 final class AudioActivityMonitor {
     /// How long to wait for a burst of related property changes to settle.
     static let coalescingInterval: TimeInterval = 0.15
     /// Ceiling on that wait. An output-device switch emits a stream of changes
-    /// across three property kinds; without a ceiling each one pushed delivery
-    /// out again, so a sustained burst could postpone re-applying the user's
-    /// volume indefinitely.
+    /// across all three property kinds; without a ceiling each one pushed
+    /// delivery out again, so a sustained burst could postpone re-applying the
+    /// user's volume indefinitely.
     static let maximumCoalescingDelay: TimeInterval = 0.5
 
     private let queue = DispatchQueue(label: "com.dbdeck.audio-activity")
-    private let onChange: () -> Void
+    private let queueKey = DispatchSpecificKey<Void>()
+    private let onChange: (AudioChange) -> Void
     private let logger = Logger(subsystem: "com.dbdeck.mac", category: "Energy")
+
+    // One block per property kind, reused across every object it is registered
+    // on: Core Audio matches listeners by block reference, so sharing one keeps
+    // registration and removal symmetrical and avoids allocating a closure per
+    // audio process object.
     private var processListListener: AudioObjectPropertyListenerBlock?
     private var defaultOutputListener: AudioObjectPropertyListenerBlock?
-    private var outputListeners: [AudioObjectID: AudioObjectPropertyListenerBlock] = [:]
+    private var processOutputListener: AudioObjectPropertyListenerBlock?
+
+    private var watchedProcessObjectIDs: Set<AudioObjectID> = []
     private var pendingNotification: DispatchWorkItem?
     private var pendingSince: Date?
+    private var pendingChange: AudioChange = []
 
-    init(onChange: @escaping () -> Void) throws {
+    init(onChange: @escaping (AudioChange) -> Void) throws {
         self.onChange = onChange
+        queue.setSpecific(key: queueKey, value: ())
 
-        let listener: AudioObjectPropertyListenerBlock = { [weak self] _, _ in
+        let processListListener: AudioObjectPropertyListenerBlock = { [weak self] _, _ in
             guard let self else { return }
             self.rebuildOutputListeners()
-            self.scheduleChangeNotification()
+            self.recordChange(.processList)
         }
-        processListListener = listener
-
-        var address = CoreAudioSupport.address(kAudioHardwarePropertyProcessObjectList)
-        try CoreAudioSupport.check(
-            AudioObjectAddPropertyListenerBlock(
-                CoreAudioSupport.systemObject,
-                &address,
-                queue,
-                listener
-            ),
-            operation: "Watch audio process list"
-        )
-
-        let outputListener: AudioObjectPropertyListenerBlock = { [weak self] _, _ in
-            self?.scheduleChangeNotification()
+        self.processListListener = processListListener
+        self.defaultOutputListener = { [weak self] _, _ in
+            self?.recordChange(.defaultOutputDevice)
         }
-        defaultOutputListener = outputListener
-        var outputAddress = CoreAudioSupport.address(
-            kAudioHardwarePropertyDefaultOutputDevice
-        )
+        self.processOutputListener = { [weak self] _, _ in
+            self?.recordChange(.processOutputState)
+        }
+
         do {
             try CoreAudioSupport.check(
-                AudioObjectAddPropertyListenerBlock(
-                    CoreAudioSupport.systemObject,
-                    &outputAddress,
-                    queue,
-                    outputListener
+                CoreAudioSupport.addPropertyListener(
+                    objectID: CoreAudioSupport.systemObject,
+                    selector: kAudioHardwarePropertyProcessObjectList,
+                    queue: queue,
+                    listener: processListListener
+                ),
+                operation: "Watch audio process list"
+            )
+            try CoreAudioSupport.check(
+                CoreAudioSupport.addPropertyListener(
+                    objectID: CoreAudioSupport.systemObject,
+                    selector: kAudioHardwarePropertyDefaultOutputDevice,
+                    queue: queue,
+                    listener: self.defaultOutputListener!
                 ),
                 operation: "Watch default output device"
             )
         } catch {
-            queue.sync { removeAllListeners() }
+            onQueue { removeAllListeners() }
             throw error
         }
 
-        queue.sync {
-            rebuildOutputListeners()
-        }
+        onQueue { rebuildOutputListeners() }
     }
 
     deinit {
-        pendingNotification?.cancel()
-        queue.sync {
+        onQueue {
+            pendingNotification?.cancel()
+            pendingNotification = nil
             removeAllListeners()
         }
     }
 
+    /// A listener block holds a temporary strong reference while it runs, so the
+    /// last release — and therefore `deinit` — can happen on `queue`. Dispatching
+    /// synchronously onto a serial queue from itself deadlocks, so check first.
+    private func onQueue(_ body: () -> Void) {
+        if DispatchQueue.getSpecific(key: queueKey) != nil {
+            body()
+        } else {
+            queue.sync(execute: body)
+        }
+    }
+
     private func rebuildOutputListeners() {
+        guard let processOutputListener else { return }
+
         let objectIDs: [AudioObjectID]
         do {
             objectIDs = try CoreAudioSupport.readObjectIDs(
@@ -90,70 +118,82 @@ final class AudioActivityMonitor {
         }
 
         let desiredIDs = Set(objectIDs)
-        for objectID in Array(outputListeners.keys) where !desiredIDs.contains(objectID) {
-            // Core Audio has already destroyed objects removed from this list.
-            // It also releases their listener blocks, so only drop our copy here.
-            outputListeners[objectID] = nil
-        }
-        for objectID in desiredIDs where outputListeners[objectID] == nil {
-            addOutputListener(for: objectID)
-        }
-    }
+        var watchedIDs = watchedProcessObjectIDs.intersection(desiredIDs)
 
-    private func addOutputListener(for objectID: AudioObjectID) {
-        let listener: AudioObjectPropertyListenerBlock = { [weak self] _, _ in
-            self?.scheduleChangeNotification()
+        // Core Audio recycles object IDs. Leaving a vanished object registered
+        // means a later process assigned the same ID gets a second listener
+        // while the stale one is still live, so every change fires twice.
+        for objectID in watchedProcessObjectIDs.subtracting(desiredIDs) {
+            CoreAudioSupport.removePropertyListener(
+                objectID: objectID,
+                selector: kAudioProcessPropertyIsRunningOutput,
+                queue: queue,
+                listener: processOutputListener
+            )
         }
-        var address = CoreAudioSupport.address(kAudioProcessPropertyIsRunningOutput)
-        let status = AudioObjectAddPropertyListenerBlock(objectID, &address, queue, listener)
-        guard status == noErr else {
-            logger.debug("Could not watch audio object \(objectID): \(status)")
-            return
-        }
-        outputListeners[objectID] = listener
-    }
 
-    private func removeOutputListener(for objectID: AudioObjectID) {
-        guard let listener = outputListeners.removeValue(forKey: objectID) else { return }
-        var address = CoreAudioSupport.address(kAudioProcessPropertyIsRunningOutput)
-        AudioObjectRemovePropertyListenerBlock(objectID, &address, queue, listener)
+        for objectID in desiredIDs.subtracting(watchedProcessObjectIDs) {
+            let status = CoreAudioSupport.addPropertyListener(
+                objectID: objectID,
+                selector: kAudioProcessPropertyIsRunningOutput,
+                queue: queue,
+                listener: processOutputListener
+            )
+            guard status == noErr else {
+                logger.debug("Could not watch audio object \(objectID): \(status)")
+                continue
+            }
+            watchedIDs.insert(objectID)
+        }
+
+        watchedProcessObjectIDs = watchedIDs
     }
 
     private func removeAllListeners() {
-        for objectID in Array(outputListeners.keys) {
-            removeOutputListener(for: objectID)
+        if let processOutputListener {
+            for objectID in watchedProcessObjectIDs {
+                CoreAudioSupport.removePropertyListener(
+                    objectID: objectID,
+                    selector: kAudioProcessPropertyIsRunningOutput,
+                    queue: queue,
+                    listener: processOutputListener
+                )
+            }
         }
+        watchedProcessObjectIDs = []
+
         if let processListListener {
-            var address = CoreAudioSupport.address(kAudioHardwarePropertyProcessObjectList)
-            AudioObjectRemovePropertyListenerBlock(
-                CoreAudioSupport.systemObject,
-                &address,
-                queue,
-                processListListener
+            CoreAudioSupport.removePropertyListener(
+                objectID: CoreAudioSupport.systemObject,
+                selector: kAudioHardwarePropertyProcessObjectList,
+                queue: queue,
+                listener: processListListener
+            )
+        }
+        if let defaultOutputListener {
+            CoreAudioSupport.removePropertyListener(
+                objectID: CoreAudioSupport.systemObject,
+                selector: kAudioHardwarePropertyDefaultOutputDevice,
+                queue: queue,
+                listener: defaultOutputListener
             )
         }
         processListListener = nil
-        if let defaultOutputListener {
-            var address = CoreAudioSupport.address(
-                kAudioHardwarePropertyDefaultOutputDevice
-            )
-            AudioObjectRemovePropertyListenerBlock(
-                CoreAudioSupport.systemObject,
-                &address,
-                queue,
-                defaultOutputListener
-            )
-        }
         defaultOutputListener = nil
+        processOutputListener = nil
     }
 
-    /// Called only from listener blocks, so `pendingSince` stays queue-confined.
-    private func scheduleChangeNotification() {
+    /// Called only from listener blocks, so the pending state stays queue-confined.
+    private func recordChange(_ change: AudioChange) {
+        pendingChange.insert(change)
+
         let delay: TimeInterval
         if let pendingSince {
-            let alreadyWaited = Date().timeIntervalSince(pendingSince)
             delay = max(
-                min(Self.coalescingInterval, Self.maximumCoalescingDelay - alreadyWaited),
+                min(
+                    Self.coalescingInterval,
+                    Self.maximumCoalescingDelay - Date().timeIntervalSince(pendingSince)
+                ),
                 0
             )
         } else {
@@ -164,8 +204,10 @@ final class AudioActivityMonitor {
         pendingNotification?.cancel()
         let workItem = DispatchWorkItem { [weak self] in
             guard let self else { return }
+            let change = self.pendingChange
+            self.pendingChange = []
             self.pendingSince = nil
-            DispatchQueue.main.async(execute: self.onChange)
+            DispatchQueue.main.async { self.onChange(change) }
         }
         pendingNotification = workItem
         queue.asyncAfter(deadline: .now() + delay, execute: workItem)

@@ -124,6 +124,29 @@ struct AppAudioEngineTests {
         #expect(environment.createdRoutes[1].stopCallCount == 1)
     }
 
+    @Test func readsTheOutputDeviceOncePerPass() {
+        let environment = RouteEnvironment()
+        let engine = environment.makeEngine()
+        let apps = (0..<3).map {
+            audioApp(bundleID: "com.example.app\($0)", processIDs: [AudioObjectID($0 + 1)])
+        }
+
+        engine.withOutputDeviceCached {
+            for app in apps {
+                _ = engine.apply(setting(0.5), to: app)
+            }
+        }
+
+        #expect(environment.createCallCount == 3)
+        #expect(environment.outputDeviceLookupCount == 1)
+
+        // Outside a pass every call reads afresh, so the cache cannot go stale.
+        for app in apps {
+            _ = engine.apply(setting(0.4), to: app)
+        }
+        #expect(environment.outputDeviceLookupCount == 4)
+    }
+
     private func setting(_ volume: Double) -> AppVolumeSetting {
         AppVolumeSetting(volume: volume, isMuted: false)
     }
@@ -173,6 +196,7 @@ private final class StubRoute: AudioRoute {
 private final class RouteEnvironment {
     var outputDeviceUID = "device-A"
     var failureMessage: String?
+    private(set) var outputDeviceLookupCount = 0
     private(set) var createdRoutes: [StubRoute] = []
     private(set) var createCallCount = 0
     private var currentDate = Date(timeIntervalSince1970: 1_000)
@@ -183,7 +207,10 @@ private final class RouteEnvironment {
 
     func makeEngine() -> AppAudioEngine {
         AppAudioEngine(
-            currentOutputDeviceUID: { self.outputDeviceUID },
+            currentOutputDeviceUID: {
+                self.outputDeviceLookupCount += 1
+                return self.outputDeviceUID
+            },
             makeRoute: { _, processIDs, gain in
                 self.createCallCount += 1
                 if let failureMessage = self.failureMessage {
