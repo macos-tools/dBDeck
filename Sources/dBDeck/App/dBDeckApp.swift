@@ -29,7 +29,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var mixerWindowController: NSWindowController?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        logger.info("Menu bar template icon configured")
+        logger.info("Menu bar agent launched")
 
 #if DEBUG
         let arguments = ProcessInfo.processInfo.arguments
