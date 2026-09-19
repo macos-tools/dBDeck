@@ -142,6 +142,10 @@ private final class StubAudioEngine: AppAudioRouting {
         failures = failures.filter { appIDs.contains($0.key) }
     }
 
+    func retryFailure(for appID: String) {
+        failures[appID] = nil
+    }
+
     func retryFailures() {
         failures.removeAll()
     }

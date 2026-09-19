@@ -2,10 +2,10 @@ import AudioDSP
 import CoreAudio
 import Foundation
 
-final class ProcessAudioRoute {
+final class ProcessAudioRoute: AudioRoute {
     let appID: String
     let processIDs: [AudioObjectID]
-    let outputDeviceID: AudioObjectID
+    let outputDeviceUID: String
 
     private var tapID = AudioObjectID(kAudioObjectUnknown)
     private var aggregateDeviceID = AudioObjectID(kAudioObjectUnknown)
@@ -16,11 +16,8 @@ final class ProcessAudioRoute {
     init(appID: String, processIDs: [AudioObjectID], gain: Float) throws {
         self.appID = appID
         self.processIDs = processIDs.sorted()
-        outputDeviceID = try CoreAudioSupport.defaultOutputDeviceID()
+        outputDeviceUID = try CoreAudioSupport.defaultOutputDeviceUID()
 
-        guard outputDeviceID != kAudioObjectUnknown else {
-            throw CoreAudioFailure(operation: "Find default output device", status: kAudioHardwareBadDeviceError)
-        }
         guard let context = DBDGainContextCreate(gain) else {
             throw CoreAudioFailure(operation: "Allocate audio gain state", status: OSStatus(memFullErr))
         }
@@ -68,15 +65,9 @@ final class ProcessAudioRoute {
     }
 
     private func start(gain: Float) throws {
-        let outputUID = try CoreAudioSupport.readString(
-            objectID: outputDeviceID,
-            selector: kAudioDevicePropertyDeviceUID,
-            operation: "Read output device UID"
-        )
-
         let tapDescription = CATapDescription(
             processes: processIDs,
-            deviceUID: outputUID,
+            deviceUID: outputDeviceUID,
             stream: 0
         )
         tapDescription.name = "dBDeck \(appID)"
@@ -97,11 +88,11 @@ final class ProcessAudioRoute {
         let aggregateDescription: [String: Any] = [
             kAudioAggregateDeviceNameKey: "dBDeck Private Route",
             kAudioAggregateDeviceUIDKey: aggregateUID,
-            kAudioAggregateDeviceMainSubDeviceKey: outputUID,
+            kAudioAggregateDeviceMainSubDeviceKey: outputDeviceUID,
             kAudioAggregateDeviceIsPrivateKey: true,
             kAudioAggregateDeviceTapAutoStartKey: true,
             kAudioAggregateDeviceSubDeviceListKey: [
-                [kAudioSubDeviceUIDKey: outputUID]
+                [kAudioSubDeviceUIDKey: outputDeviceUID]
             ],
             kAudioAggregateDeviceTapListKey: [
                 [kAudioSubTapUIDKey: tapUID]

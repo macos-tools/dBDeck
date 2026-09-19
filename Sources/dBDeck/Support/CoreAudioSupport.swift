@@ -125,7 +125,25 @@ enum CoreAudioSupport {
         return value as String
     }
 
-    static func defaultOutputDeviceID() throws -> AudioObjectID {
+    /// The stable identity of the current output device. Prefer this over the
+    /// `AudioObjectID`, which Core Audio recycles: a device that disappears and
+    /// is replaced can hand its old object ID to a different device.
+    static func defaultOutputDeviceUID() throws -> String {
+        let deviceID = try defaultOutputDeviceID()
+        guard deviceID != AudioObjectID(kAudioObjectUnknown) else {
+            throw CoreAudioFailure(
+                operation: "Find default output device",
+                status: kAudioHardwareBadDeviceError
+            )
+        }
+        return try readString(
+            objectID: deviceID,
+            selector: kAudioDevicePropertyDeviceUID,
+            operation: "Read output device UID"
+        )
+    }
+
+    private static func defaultOutputDeviceID() throws -> AudioObjectID {
         try readInteger(
             objectID: systemObject,
             selector: kAudioHardwarePropertyDefaultOutputDevice,

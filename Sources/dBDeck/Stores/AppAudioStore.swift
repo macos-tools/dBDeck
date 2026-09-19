@@ -128,6 +128,7 @@ final class AppAudioStore: ObservableObject {
     }
 
     func manualRefresh() {
+        engine.retryFailures()
         historicalApplications.retryAllUnavailableApplications()
         refresh()
     }
@@ -177,6 +178,7 @@ final class AppAudioStore: ObservableObject {
         settingsNeedSave = true
         schedulePreferencesSave()
         if app.isPlaying {
+            engine.retryFailure(for: app.id)
             applyRoute(newSetting, to: app)
         }
         publishErrorMessage()

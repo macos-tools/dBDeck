@@ -4,6 +4,14 @@ import OSLog
 
 /// Watches Core Audio state changes without polling while the system is idle.
 final class AudioActivityMonitor {
+    /// How long to wait for a burst of related property changes to settle.
+    static let coalescingInterval: TimeInterval = 0.15
+    /// Ceiling on that wait. An output-device switch emits a stream of changes
+    /// across three property kinds; without a ceiling each one pushed delivery
+    /// out again, so a sustained burst could postpone re-applying the user's
+    /// volume indefinitely.
+    static let maximumCoalescingDelay: TimeInterval = 0.5
+
     private let queue = DispatchQueue(label: "com.dbdeck.audio-activity")
     private let onChange: () -> Void
     private let logger = Logger(subsystem: "com.dbdeck.mac", category: "Energy")
@@ -11,6 +19,7 @@ final class AudioActivityMonitor {
     private var defaultOutputListener: AudioObjectPropertyListenerBlock?
     private var outputListeners: [AudioObjectID: AudioObjectPropertyListenerBlock] = [:]
     private var pendingNotification: DispatchWorkItem?
+    private var pendingSince: Date?
 
     init(onChange: @escaping () -> Void) throws {
         self.onChange = onChange
@@ -138,13 +147,27 @@ final class AudioActivityMonitor {
         defaultOutputListener = nil
     }
 
+    /// Called only from listener blocks, so `pendingSince` stays queue-confined.
     private func scheduleChangeNotification() {
+        let delay: TimeInterval
+        if let pendingSince {
+            let alreadyWaited = Date().timeIntervalSince(pendingSince)
+            delay = max(
+                min(Self.coalescingInterval, Self.maximumCoalescingDelay - alreadyWaited),
+                0
+            )
+        } else {
+            pendingSince = Date()
+            delay = Self.coalescingInterval
+        }
+
         pendingNotification?.cancel()
         let workItem = DispatchWorkItem { [weak self] in
             guard let self else { return }
+            self.pendingSince = nil
             DispatchQueue.main.async(execute: self.onChange)
         }
         pendingNotification = workItem
-        queue.asyncAfter(deadline: .now() + 0.15, execute: workItem)
+        queue.asyncAfter(deadline: .now() + delay, execute: workItem)
     }
 }
