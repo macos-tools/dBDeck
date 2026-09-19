@@ -9,19 +9,10 @@ final class VolumePreferences {
     }
 
     func load() -> [String: AppVolumeSetting] {
-        guard
-            let data = defaults.data(forKey: storageKey),
-            let decoded = try? JSONDecoder().decode([String: AppVolumeSetting].self, from: data)
-        else {
-            return [:]
-        }
-        return decoded
+        defaults.codable([String: AppVolumeSetting].self, forKey: storageKey) ?? [:]
     }
 
     func save(_ settings: [String: AppVolumeSetting]) {
-        guard let data = try? JSONEncoder().encode(settings) else {
-            return
-        }
-        defaults.set(data, forKey: storageKey)
+        defaults.setCodable(settings, forKey: storageKey)
     }
 }

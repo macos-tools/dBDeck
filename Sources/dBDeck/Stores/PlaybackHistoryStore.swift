@@ -233,21 +233,12 @@ final class PlaybackHistoryStore {
         defaults: UserDefaults,
         storageKey: String
     ) -> (records: [String: AppPlaybackRecord], didNormalize: Bool) {
-        guard
-            let data = defaults.data(forKey: storageKey),
-            let records = try? JSONDecoder().decode([AppPlaybackRecord].self, from: data)
-        else {
+        guard let records = defaults.codable([AppPlaybackRecord].self, forKey: storageKey) else {
             return ([:], false)
         }
         var normalizedRecords: [String: AppPlaybackRecord] = [:]
         var didNormalize = false
         for decodedRecord in records {
-#if DEBUG
-            guard !decodedRecord.bundleID.hasPrefix("com.dbdeck.tests.") else {
-                didNormalize = true
-                continue
-            }
-#endif
             let record = canonicalizedRecord(decodedRecord)
             if record != decodedRecord {
                 didNormalize = true
@@ -292,8 +283,7 @@ final class PlaybackHistoryStore {
     }
 
     private func save() {
-        guard let data = try? JSONEncoder().encode(records) else { return }
-        defaults.set(data, forKey: storageKey)
+        defaults.setCodable(records, forKey: storageKey)
     }
 
     private func saveVisibilityState() {

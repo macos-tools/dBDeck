@@ -18,4 +18,5 @@ AUDIO_PID=$!
 trap 'kill "$AUDIO_PID" >/dev/null 2>&1 || true' EXIT
 sleep 0.2
 
-"$APP_BINARY" --verify-route "$AUDIO_PID"
+# A throwaway defaults suite so this run cannot touch real playback history.
+"$APP_BINARY" --defaults-suite "com.dbdeck.verify.$$" --verify-route "$AUDIO_PID"

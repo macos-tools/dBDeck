@@ -80,7 +80,11 @@ final class AudioActivityMonitor {
             throw error
         }
 
-        onQueue { rebuildOutputListeners() }
+        // Registering one listener per audio process object is the slowest part
+        // of setup, and nothing needs it to have finished before init returns.
+        queue.async { [weak self] in
+            self?.rebuildOutputListeners()
+        }
     }
 
     deinit {

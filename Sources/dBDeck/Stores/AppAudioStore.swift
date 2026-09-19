@@ -40,22 +40,26 @@ final class AppAudioStore: ObservableObject {
         discovery: (any AudioProcessDiscovering)? = nil,
         engine: any AppAudioRouting = AppAudioEngine(),
         excludedBundleIDs: Set<String> = DBDeckApplicationIdentity.bundleIDs,
-        startsEventMonitoring: Bool = true
+        startsEventMonitoring: Bool = true,
+        performsInitialRefresh: Bool = true
     ) {
         self.preferences = preferences
         self.playbackHistory = playbackHistory
         self.discovery = discovery ?? AudioProcessDiscovery(excludedBundleIDs: excludedBundleIDs)
         self.engine = engine
         self.excludedBundleIDs = excludedBundleIDs
+        // Rows this app wrote about itself, including under bundle IDs earlier
+        // versions used. This is a one-time cleanup, not a live filter.
+        let ownBundleIDs = excludedBundleIDs.union(DBDeckApplicationIdentity.legacyBundleIDs)
         let savedSettings = preferences.load()
         let retainedSettings = savedSettings.filter {
-            !excludedBundleIDs.contains($0.key)
+            !ownBundleIDs.contains($0.key)
         }
         settings = retainedSettings
         if settings.count != savedSettings.count {
             preferences.save(settings)
         }
-        playbackHistory.removeRecords(for: excludedBundleIDs)
+        playbackHistory.removeRecords(for: ownBundleIDs)
         if startsEventMonitoring {
             observeWorkspaceEvents()
         }
@@ -82,7 +86,9 @@ final class AppAudioStore: ObservableObject {
                 logger.error("Core Audio event monitoring failed; using 10-second fallback: \(error.localizedDescription, privacy: .public)")
             }
         }
-        refresh()
+        if performsInitialRefresh {
+            refresh()
+        }
     }
 
     deinit {
@@ -143,6 +149,7 @@ final class AppAudioStore: ObservableObject {
     }
 
     func manualRefresh() {
+        cacheRunningApplications()
         engine.retryFailures()
         ApplicationDisplayNameResolver.clearCache()
         historicalApplications.retryAllUnavailableApplications()
@@ -290,6 +297,7 @@ final class AppAudioStore: ObservableObject {
             store.prepareForSleep()
         }
         observeWorkspace(NSWorkspace.didWakeNotification) { store in
+            store.cacheRunningApplications()
             store.refresh()
         }
     }

@@ -1,6 +1,7 @@
 import AudioDSP
 import CoreAudio
 import Foundation
+import OSLog
 
 final class ProcessAudioRoute: AudioRoute {
     let appID: String
@@ -12,6 +13,7 @@ final class ProcessAudioRoute: AudioRoute {
     private var ioProcID: AudioDeviceIOProcID?
     private var gainContext: UnsafeMutableRawPointer?
     private var isStopped = false
+    private let logger = Logger(subsystem: "com.dbdeck.mac", category: "Route")
 
     init(appID: String, processIDs: [AudioObjectID], gain: Float) throws {
         self.appID = appID
@@ -124,9 +126,57 @@ final class ProcessAudioRoute: AudioRoute {
         )
         ioProcID = newIOProcID
 
+        logFormatMismatchIfNeeded()
+
         try CoreAudioSupport.check(
             AudioDeviceStart(aggregateDeviceID, ioProcID),
             operation: "Start per-app audio route"
         )
+    }
+
+    /// The gain callback pairs input and output buffers by index and copies the
+    /// smaller byte count, which assumes the tap and the aggregate agree on
+    /// channel layout. They should, because the tap is created against this
+    /// device's stream. Log it rather than refuse the route if they ever differ,
+    /// so a real mismatch leaves evidence instead of silently garbling audio.
+    private func logFormatMismatchIfNeeded() {
+        guard
+            let tapFormat = streamFormat(of: tapID, selector: kAudioTapPropertyFormat),
+            let deviceFormat = streamFormat(
+                of: aggregateDeviceID,
+                selector: kAudioDevicePropertyStreamFormat,
+                scope: kAudioDevicePropertyScopeOutput
+            ),
+            tapFormat.mChannelsPerFrame != deviceFormat.mChannelsPerFrame
+                || tapFormat.mSampleRate != deviceFormat.mSampleRate
+        else {
+            return
+        }
+        logger.warning(
+            """
+            Route \(self.appID, privacy: .public): tap format \
+            \(tapFormat.mChannelsPerFrame) ch @ \(tapFormat.mSampleRate) Hz does not match \
+            device format \(deviceFormat.mChannelsPerFrame) ch @ \(deviceFormat.mSampleRate) Hz
+            """
+        )
+    }
+
+    private func streamFormat(
+        of objectID: AudioObjectID,
+        selector: AudioObjectPropertySelector,
+        scope: AudioObjectPropertyScope = kAudioObjectPropertyScopeGlobal
+    ) -> AudioStreamBasicDescription? {
+        var propertyAddress = CoreAudioSupport.address(selector, scope: scope)
+        var format = AudioStreamBasicDescription()
+        var size = UInt32(MemoryLayout<AudioStreamBasicDescription>.size)
+        let status = AudioObjectGetPropertyData(
+            objectID,
+            &propertyAddress,
+            0,
+            nil,
+            &size,
+            &format
+        )
+        return status == noErr ? format : nil
     }
 }

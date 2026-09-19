@@ -19,7 +19,11 @@ enum MenuBarIcon {
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
-    let store = AppAudioStore()
+    let store = AppAudioStore(
+        preferences: VolumePreferences(defaults: .dbdeck),
+        playbackHistory: PlaybackHistoryStore(defaults: .dbdeck),
+        performsInitialRefresh: false
+    )
 
     private let logger = Logger(subsystem: "com.dbdeck.mac", category: "App")
     private var mixerWindowController: NSWindowController?
@@ -50,6 +54,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
 #endif
+
+        // Deferred by one run-loop turn so the menu bar item appears before the
+        // first Core Audio discovery pass runs.
+        Task { @MainActor [store] in
+            store.refresh()
+        }
     }
 
     func applicationShouldHandleReopen(
