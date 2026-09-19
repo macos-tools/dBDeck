@@ -1,18 +1,47 @@
 import CoreAudio
 import Foundation
 
+/// Owns the set of live per-app audio routes and keeps it matching the volume
+/// settings the store holds.
+///
+/// A route only exists for an app whose setting needs processing; an app left at
+/// unmuted 100% is passed through untouched, which costs nothing and is why the
+/// UI presents 100% as the cheap default.
 protocol AppAudioRouting: AnyObject {
+    /// Brings `app`'s route into line with `setting`, building, adjusting or
+    /// tearing one down as needed.
+    ///
+    /// Returns a message describing why the application could not be routed, or
+    /// `nil` if it is now playing as asked. A message means the application is
+    /// audible at its own volume, so it is surfaced to the user rather than
+    /// logged.
     func apply(_ setting: AppVolumeSetting, to app: AudioApp) -> String?
+
+    /// Runs `body` with the current output device resolved once and shared by
+    /// every `apply` inside it.
     func withOutputDeviceCached(_ body: () -> Void)
+
+    /// Tears down everything held for applications outside `appIDs`, which is
+    /// how a route ends when its application stops playing or quits.
     func retainOnly(appIDs: Set<String>)
+
+    /// Brings one application's next attempt forward to now.
     func retryFailure(for appID: String)
+
+    /// Brings every pending attempt forward to now.
     func retryFailures()
+
+    /// Tears down every route, restoring normal output for all applications.
     func stopAll()
 }
 
-/// A live per-app audio route. Its identity is the process set it taps and the
-/// output device UID it was built from — never an `AudioObjectID`, which Core
-/// Audio recycles across devices.
+/// A live per-app audio route.
+///
+/// A route is identified by the two things it is built from: the set of audio
+/// process objects it taps, and the output device it feeds. The device is held
+/// as its UID string, which names one physical device for as long as it exists.
+/// `AudioObjectID`s are handles Core Audio recycles, so a device that goes away
+/// can pass its old ID to an unrelated one; identity has to survive that.
 protocol AudioRoute: AnyObject {
     var processIDs: [AudioObjectID] { get }
     var outputDeviceUID: String { get }
@@ -20,21 +49,35 @@ protocol AudioRoute: AnyObject {
     func stop()
 }
 
+/// Builds routes through `ProcessAudioRoute` and keeps them in step with the
+/// current settings and output device.
+///
+/// Every dependency on the outside world — reading the output device, building a
+/// route, reading the clock — is injected, so the reconciliation and retry rules
+/// below are exercised in tests without touching Core Audio.
 final class AppAudioEngine: AppAudioRouting {
-    /// Route setup can fail transiently — most often while Core Audio is still
-    /// settling an output-device switch. Retrying on a widening schedule means
-    /// such a failure cannot strand an app at full volume, which a permanently
-    /// cached failure did: nothing short of the error banner's Retry button
-    /// re-attempted, so neither a rescan nor moving the slider recovered.
+    /// A route that could not be built, and when to try again.
+    ///
+    /// Route setup fails transiently: Core Audio may still be settling an output
+    /// device change, a device may be momentarily busy, a permission prompt may
+    /// be pending. Because a failed route means the app plays untouched at full
+    /// volume while its slider still shows the chosen level, a failure must
+    /// never be terminal. Each one schedules the next attempt, doubling from
+    /// `initialRetryInterval` to a `maximumRetryInterval` ceiling so a device
+    /// that is genuinely unusable is not retried in a tight loop.
     private struct RouteFailure {
         let message: String
         let attempt: Int
         let nextAttemptAt: Date
     }
 
+    /// How long to wait before the first re-attempt.
     static let initialRetryInterval: TimeInterval = 1
+    /// The longest the wait grows to, however many attempts have failed.
     static let maximumRetryInterval: TimeInterval = 30
 
+    // Keyed by application, which is also how the store keys settings, so a
+    // route outlives the individual audio processes behind it.
     private var routes: [String: AudioRoute] = [:]
     private var failures: [String: RouteFailure] = [:]
 
@@ -72,6 +115,9 @@ final class AppAudioEngine: AppAudioRouting {
             return error.localizedDescription
         }
 
+        // An existing route can absorb a volume change in place. It cannot
+        // absorb a different process set or a different device, since both are
+        // fixed when the tap and aggregate device are created.
         let processIDs = app.processIDs.sorted()
         if let route = routes[app.id],
            route.processIDs == processIDs,
@@ -97,8 +143,13 @@ final class AppAudioEngine: AppAudioRouting {
         }
     }
 
-    /// Reads the output device once for the duration of `body` rather than once
-    /// per app. The cache cannot outlive the call, so it can never go stale.
+    /// Runs `body` with the current output device resolved once and shared by
+    /// every `apply` inside it.
+    ///
+    /// A refresh pass applies settings for every playing app, and each would
+    /// otherwise repeat the same two Core Audio property reads. The cache is
+    /// scoped to this call so it cannot survive into a later pass, where the
+    /// device may have changed.
     func withOutputDeviceCached(_ body: () -> Void) {
         isCachingOutputDevice = true
         defer {
@@ -126,9 +177,11 @@ final class AppAudioEngine: AppAudioRouting {
         failures = failures.filter { appIDs.contains($0.key) }
     }
 
-    /// Makes this app's next `apply` re-attempt immediately, for when the user
-    /// asked for something directly (moving a slider, muting) and should not
-    /// have to wait out a backoff.
+    /// Brings this app's next attempt forward to now.
+    ///
+    /// Used when something happened that makes success newly likely — the user
+    /// moved a slider or muted, or the output device changed — so the attempt
+    /// is not held back by a delay earned under different conditions.
     func retryFailure(for appID: String) {
         guard let failure = failures[appID] else { return }
         failures[appID] = RouteFailure(

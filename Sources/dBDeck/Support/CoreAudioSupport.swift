@@ -1,6 +1,11 @@
 import CoreAudio
 import Foundation
 
+/// A failed Core Audio call, carrying the operation that failed so the message
+/// says what was being attempted rather than only that something went wrong.
+///
+/// Status codes are rendered as their four-character code where they are
+/// printable, which is how Core Audio's own documentation names them.
 struct CoreAudioFailure: LocalizedError {
     let operation: String
     let status: OSStatus
@@ -39,6 +44,9 @@ struct CoreAudioFailure: LocalizedError {
     }
 }
 
+/// Typed access to the Core Audio property API, which otherwise means
+/// assembling an address, sizing a buffer and checking an `OSStatus` at every
+/// call site.
 enum CoreAudioSupport {
     static let systemObject = AudioObjectID(kAudioObjectSystemObject)
 
@@ -62,8 +70,10 @@ enum CoreAudioSupport {
         return AudioObjectAddPropertyListenerBlock(objectID, &propertyAddress, queue, listener)
     }
 
-    /// Core Audio matches a listener on address, queue and block, so removal has
-    /// to be handed the same three values the registration used.
+    /// Stops delivering the given property's changes to `listener`.
+    ///
+    /// A listener is identified by the address, queue and block it was
+    /// registered with, so all three have to match the registration.
     static func removePropertyListener(
         objectID: AudioObjectID,
         selector: AudioObjectPropertySelector,
@@ -98,6 +108,8 @@ enum CoreAudioSupport {
         return value
     }
 
+    /// Reads a property holding a list of audio object IDs, sizing the read
+    /// from the collection's current length.
     static func readObjectIDs(
         objectID: AudioObjectID,
         selector: AudioObjectPropertySelector,
@@ -128,9 +140,9 @@ enum CoreAudioSupport {
                 operation: operation
             )
         }
-        // The read rewrites `size` with what was actually returned. The process
-        // list changes constantly, so it can shrink between the two calls and
-        // leave trailing kAudioObjectUnknown entries in the buffer.
+        // `size` is in/out: the read reports how many bytes it actually
+        // returned, which can be fewer than the preceding query promised if the
+        // collection shrank in between. The buffer beyond that is untouched.
         return Array(values.prefix(Int(size) / stride))
     }
 
@@ -152,9 +164,11 @@ enum CoreAudioSupport {
         return value as String
     }
 
-    /// The stable identity of the current output device. Prefer this over the
-    /// `AudioObjectID`, which Core Audio recycles: a device that disappears and
-    /// is replaced can hand its old object ID to a different device.
+    /// The UID of the device audio is currently played through.
+    ///
+    /// This is the durable name for a device. The `AudioObjectID` reached
+    /// through it is a handle that Core Audio reuses, so it identifies a device
+    /// only for as long as that device exists.
     static func defaultOutputDeviceUID() throws -> String {
         let deviceID = try defaultOutputDeviceID()
         guard deviceID != AudioObjectID(kAudioObjectUnknown) else {

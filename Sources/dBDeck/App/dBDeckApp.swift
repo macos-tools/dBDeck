@@ -55,8 +55,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 #endif
 
-        // Deferred by one run-loop turn so the menu bar item appears before the
-        // first Core Audio discovery pass runs.
+        // One run-loop turn later, so the menu bar item is on screen before the
+        // first discovery pass runs.
         Task { @MainActor [store] in
             store.refresh()
         }
@@ -101,6 +101,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 }
 
+/// A menu bar agent: no Dock icon and no main window, with the mixer presented
+/// from the status item.
+///
+/// `applicationShouldHandleReopen` opens the mixer in a window as well, which is
+/// the way back in if the menu bar is too full to show the status item.
 @main
 struct dBDeckApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate

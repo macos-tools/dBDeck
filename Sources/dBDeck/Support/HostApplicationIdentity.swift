@@ -1,16 +1,20 @@
 import Foundation
 
+/// How the mixer recognises itself.
 enum DBDeckApplicationIdentity {
-    /// Excluded from discovery so the mixer never lists itself. The live filter
-    /// is the app's own identity and nothing else; `AudioProcessDiscovery` also
-    /// drops its own pid, so this is belt-and-braces rather than the mechanism.
+    /// Identities the mixer never lists, so it cannot appear in its own list.
+    ///
+    /// Discovery also drops its own process by pid, which is the primary
+    /// mechanism; this covers the stored side, where a bundle identifier is all
+    /// there is to match on.
     static var bundleIDs: Set<String> {
         Set([Bundle.main.bundleIdentifier].compactMap { $0 })
     }
 
-    /// Bundle IDs earlier versions of this app shipped under. Used once, at
-    /// launch, to delete rows they wrote. Keeping them in the live filter would
-    /// permanently hide any unrelated app that ever shipped under one, and the
-    /// list could only ever grow.
+    /// Bundle identifiers earlier versions of this app shipped under.
+    ///
+    /// Applied once at launch to discard rows they left behind. They are kept
+    /// separate from the live exclusions because an identifier this app no
+    /// longer uses is one another application may legitimately claim.
     static let legacyBundleIDs: Set<String> = ["com.dbdeck.app"]
 }

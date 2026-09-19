@@ -2,7 +2,10 @@ import CoreAudio
 import Foundation
 import OSLog
 
-/// What Core Audio reported changing since the last delivered notification.
+/// The kinds of Core Audio change a notification covers.
+///
+/// Several can arrive together, because one user action — switching the output
+/// device, say — moves more than one property at a time.
 struct AudioChange: OptionSet {
     let rawValue: Int
 
@@ -11,14 +14,27 @@ struct AudioChange: OptionSet {
     static let processOutputState = AudioChange(rawValue: 1 << 2)
 }
 
-/// Watches Core Audio state changes without polling while the system is idle.
+/// Tells the store when Core Audio state has moved, so nothing has to be polled
+/// while the machine is idle.
+///
+/// Three properties are watched: the list of audio processes, the default output
+/// device, and each process's output-running flag. The first is watched on the
+/// system object and drives registration of the third, which has to be attached
+/// per process object as processes come and go.
+///
+/// Every listener runs on one serial queue, which owns all the mutable state
+/// here. Notifications are coalesced before being delivered on the main queue:
+/// a single user action can move several properties at once, and the store's
+/// response to any of them is the same reconciliation pass.
 final class AudioActivityMonitor {
-    /// How long to wait for a burst of related property changes to settle.
+    /// How long a burst of property changes is given to settle before delivery.
     static let coalescingInterval: TimeInterval = 0.15
-    /// Ceiling on that wait. An output-device switch emits a stream of changes
-    /// across all three property kinds; without a ceiling each one pushed
-    /// delivery out again, so a sustained burst could postpone re-applying the
-    /// user's volume indefinitely.
+    /// The longest delivery can be held once a burst has started.
+    ///
+    /// Each new change restarts the settle window, so a steady stream of them —
+    /// an app churning audio processes, a device enumerating — would keep
+    /// pushing delivery further out. The ceiling bounds how long the store can
+    /// be left acting on stale state.
     static let maximumCoalescingDelay: TimeInterval = 0.5
 
     private let queue = DispatchQueue(label: "com.dbdeck.audio-activity")
@@ -26,10 +42,10 @@ final class AudioActivityMonitor {
     private let onChange: (AudioChange) -> Void
     private let logger = Logger(subsystem: "com.dbdeck.mac", category: "Energy")
 
-    // One block per property kind, reused across every object it is registered
-    // on: Core Audio matches listeners by block reference, so sharing one keeps
-    // registration and removal symmetrical and avoids allocating a closure per
-    // audio process object.
+    // Core Audio identifies a listener by the address, queue and block it was
+    // registered with, so unregistering needs the same block reference back.
+    // Holding one block per property kind keeps that symmetric however many
+    // objects it is attached to.
     private var processListListener: AudioObjectPropertyListenerBlock?
     private var defaultOutputListener: AudioObjectPropertyListenerBlock?
     private var processOutputListener: AudioObjectPropertyListenerBlock?
@@ -80,8 +96,9 @@ final class AudioActivityMonitor {
             throw error
         }
 
-        // Registering one listener per audio process object is the slowest part
-        // of setup, and nothing needs it to have finished before init returns.
+        // Attaching the per-process listeners is the slow part of setup and
+        // nothing observes its completion, so it runs behind the queue that
+        // will own them.
         queue.async { [weak self] in
             self?.rebuildOutputListeners()
         }
@@ -95,9 +112,12 @@ final class AudioActivityMonitor {
         }
     }
 
-    /// A listener block holds a temporary strong reference while it runs, so the
-    /// last release — and therefore `deinit` — can happen on `queue`. Dispatching
-    /// synchronously onto a serial queue from itself deadlocks, so check first.
+    /// Runs `body` with exclusive access to the queue-owned state.
+    ///
+    /// A listener block takes a strong reference for as long as it runs, so the
+    /// final release — and with it `deinit` — can happen on `queue` itself.
+    /// Dispatching synchronously onto a serial queue from that queue would never
+    /// return, so the call is made directly when already there.
     private func onQueue(_ body: () -> Void) {
         if DispatchQueue.getSpecific(key: queueKey) != nil {
             body()
@@ -124,9 +144,9 @@ final class AudioActivityMonitor {
         let desiredIDs = Set(objectIDs)
         var watchedIDs = watchedProcessObjectIDs.intersection(desiredIDs)
 
-        // Core Audio recycles object IDs. Leaving a vanished object registered
-        // means a later process assigned the same ID gets a second listener
-        // while the stale one is still live, so every change fires twice.
+        // Object IDs are recycled, so a registration left behind for a process
+        // that has gone will still be live when its ID is handed to a new one.
+        // Unregistering as the list shrinks keeps one listener per object.
         for objectID in watchedProcessObjectIDs.subtracting(desiredIDs) {
             CoreAudioSupport.removePropertyListener(
                 objectID: objectID,
@@ -187,7 +207,10 @@ final class AudioActivityMonitor {
         processOutputListener = nil
     }
 
-    /// Called only from listener blocks, so the pending state stays queue-confined.
+    /// Folds a change into the pending set and schedules its delivery.
+    ///
+    /// Only listener blocks call this, which is what confines the pending state
+    /// to the queue.
     private func recordChange(_ change: AudioChange) {
         pendingChange.insert(change)
 

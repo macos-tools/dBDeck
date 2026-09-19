@@ -1,5 +1,10 @@
 import SwiftUI
 
+/// A borderless button that shows its hover and pressed states.
+///
+/// Menu bar panels are dense and unlabelled, so the controls need to read as
+/// controls without borders around everything. Help text is required rather than
+/// optional because most of these buttons are icons alone.
 struct InteractiveButton<Label: View>: View {
     let helpText: String
     let contentPadding: EdgeInsets

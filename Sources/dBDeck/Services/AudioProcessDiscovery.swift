@@ -2,16 +2,30 @@ import AppKit
 import CoreAudio
 import Foundation
 
-/// One traversal's worth of discovery: the resolved apps, plus the raw process
-/// list they were derived from.
+/// One traversal's worth of discovery.
 struct DiscoverySnapshot {
-    /// Audio-process object IDs producing output, before identity resolution or
-    /// exclusion. Core Audio property reads only — no AppKit, no disk, no
-    /// sysctl — so it is cheap enough to poll as a change signal.
+    /// The audio process objects producing output, before identity resolution
+    /// or exclusion.
+    ///
+    /// This is what `apps` was derived from, kept alongside it so a later cheap
+    /// read can be compared against the same shape. It deliberately includes
+    /// processes that never reach `apps`.
     let signature: [AudioObjectID]
+
+    /// One entry per application, with every audio process object it owns
+    /// gathered under it.
     let apps: [AudioApp]
 }
 
+/// Answers which applications are currently producing audio.
+///
+/// Two levels of detail are offered because they cost very different amounts.
+/// Resolving an application from an audio process means consulting the running
+/// application list, loading bundles, reading localized names off disk and, for
+/// processes that do not identify themselves, walking up the parent process
+/// chain. Reading which process objects are producing output is a handful of
+/// Core Audio property reads. Callers that only need to know whether anything
+/// changed use the second.
 protocol AudioProcessDiscovering {
     func snapshot() throws -> DiscoverySnapshot
     func processSignature() throws -> [AudioObjectID]
@@ -25,6 +39,8 @@ struct AudioProcessDiscovery: AudioProcessDiscovering {
         self.excludedBundleIDs = excludedBundleIDs
     }
 
+    /// The cheap half of `snapshot()`: Core Audio property reads only, with no
+    /// AppKit, disk or sysctl access, so it is affordable to poll.
     func processSignature() throws -> [AudioObjectID] {
         try activeOutputProcesses().map(\.audioObjectID).sorted()
     }
@@ -32,7 +48,7 @@ struct AudioProcessDiscovery: AudioProcessDiscovering {
     func snapshot() throws -> DiscoverySnapshot {
         let processes = try activeOutputProcesses()
         let runningApplications = Dictionary(
-            // `processIdentifier` is -1 for apps without a pid, so keys can repeat.
+            // Apps without a pid all report -1, so this key is not unique.
             NSWorkspace.shared.runningApplications.map { ($0.processIdentifier, $0) },
             uniquingKeysWith: { _, latest in latest }
         )
@@ -81,6 +97,8 @@ struct AudioProcessDiscovery: AudioProcessDiscovering {
     }
 #endif
 
+    /// Audio process objects that are currently producing output, excluding this
+    /// app's own, which would otherwise be tapped by its own mixer.
     private func activeOutputProcesses() throws -> [(audioObjectID: AudioObjectID, pid: pid_t)] {
         let processObjectIDs = try CoreAudioSupport.readObjectIDs(
             objectID: CoreAudioSupport.systemObject,

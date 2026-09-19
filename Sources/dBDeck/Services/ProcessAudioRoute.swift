@@ -3,6 +3,30 @@ import CoreAudio
 import Foundation
 import OSLog
 
+/// Intercepts one app's audio, applies gain to it, and plays the result.
+///
+/// The route is three Core Audio objects wired together:
+///
+/// 1. A **process tap** over the app's audio process objects, created with
+///    `muteBehavior = .mutedWhenTapped`. The app's own output stops reaching the
+///    device, and its samples are delivered to the tap instead. Nothing is
+///    recorded or stored — the samples exist only inside the callback below.
+/// 2. A **private aggregate device** combining the real output device with that
+///    tap. Private means it never appears in Sound preferences or the device
+///    list, so it cannot be selected or become the system default.
+/// 3. An **IOProc** on the aggregate, which is the realtime callback that
+///    multiplies the tapped samples by the current gain and writes them to the
+///    device. Above unity it soft-limits rather than clipping.
+///
+/// Because the tap mutes the original path, tearing a route down is what
+/// restores normal output — which is also what happens if any of the three
+/// objects fails to build, so setup failures must be retried rather than
+/// remembered. `AppAudioEngine` owns that policy.
+///
+/// The gain lives in a small C context (`AudioDSP`) holding an atomic float, so
+/// a volume change is a relaxed atomic store rather than anything that could
+/// block the realtime thread. Its lifetime is deliberately wider than the
+/// IOProc's: it is freed only after the IOProc has been stopped and destroyed.
 final class ProcessAudioRoute: AudioRoute {
     let appID: String
     let processIDs: [AudioObjectID]
@@ -134,11 +158,14 @@ final class ProcessAudioRoute: AudioRoute {
         )
     }
 
-    /// The gain callback pairs input and output buffers by index and copies the
-    /// smaller byte count, which assumes the tap and the aggregate agree on
-    /// channel layout. They should, because the tap is created against this
-    /// device's stream. Log it rather than refuse the route if they ever differ,
-    /// so a real mismatch leaves evidence instead of silently garbling audio.
+    /// Records a warning if the tap and the device disagree on stream format.
+    ///
+    /// The realtime callback pairs input and output buffers by index and copies
+    /// the smaller byte count, which is only correct while both sides share a
+    /// channel layout and sample rate. Creating the tap against this device's
+    /// stream is what makes them agree. This check states that assumption where
+    /// it can be observed, so a device that breaks it is diagnosable from the
+    /// log rather than only audible as distortion.
     private func logFormatMismatchIfNeeded() {
         guard
             let tapFormat = streamFormat(of: tapID, selector: kAudioTapPropertyFormat),

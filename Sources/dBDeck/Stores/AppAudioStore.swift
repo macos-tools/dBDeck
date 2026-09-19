@@ -4,6 +4,26 @@ import CoreAudio
 import Foundation
 import OSLog
 
+/// The state behind the mixer: which applications to show, what volume each is
+/// set to, and whether anything is wrong.
+///
+/// Everything here is reconciled rather than incrementally patched. A refresh
+/// takes one discovery snapshot and, from it, credits playback time, rebuilds
+/// the visible list, and brings the live audio routes into line with the stored
+/// settings. Anything that could have changed the world therefore only has to
+/// trigger a refresh, not describe what it changed.
+///
+/// Those triggers are: Core Audio property changes via `AudioActivityMonitor`,
+/// application launch and termination and sleep and wake via `NSWorkspace`, a
+/// once-a-second check while the panel is open, a ten-second fallback poll used
+/// only if Core Audio monitoring could not be started, and the user asking
+/// directly.
+///
+/// The visible list is not the same as the playing list. Applications stay
+/// listed after they stop playing, ordered playing first, then running, then by
+/// accumulated playback time, so the control you want is where you left it.
+/// `PlaybackHistoryStore` owns that history and `HistoricalApplicationResolver`
+/// turns its rows back into displayable applications.
 @MainActor
 final class AppAudioStore: ObservableObject {
     @Published private(set) var apps: [AudioApp] = []
@@ -24,8 +44,9 @@ final class AppAudioStore: ObservableObject {
     private var preferencesSaveTimer: Timer?
     private var workspaceObservers: [NSObjectProtocol] = []
     private var runningApplicationBundleIDsByPID: [pid_t: String] = [:]
-    // Several PIDs can share a bundle ID, so the set needs reference counts to
-    // know when the last instance of an app has gone.
+    // Which applications are running, tracked from launch and terminate
+    // notifications. One application can hold several PIDs, so membership is
+    // reference counted: the bundle ID leaves the set when its last one does.
     private var runningBundleIDCounts: [String: Int] = [:]
     private var runningBundleIDs: Set<String> = []
     private var playbackAccounting: (observations: [PlaybackObservation], since: Date)?
@@ -48,8 +69,9 @@ final class AppAudioStore: ObservableObject {
         self.discovery = discovery ?? AudioProcessDiscovery(excludedBundleIDs: excludedBundleIDs)
         self.engine = engine
         self.excludedBundleIDs = excludedBundleIDs
-        // Rows this app wrote about itself, including under bundle IDs earlier
-        // versions used. This is a one-time cleanup, not a live filter.
+        // The mixer never lists itself, so any stored row about itself is
+        // stale data to discard at startup rather than something to filter on
+        // every read.
         let ownBundleIDs = excludedBundleIDs.union(DBDeckApplicationIdentity.legacyBundleIDs)
         let savedSettings = preferences.load()
         let retainedSettings = savedSettings.filter {
@@ -63,8 +85,10 @@ final class AppAudioStore: ObservableObject {
         if startsEventMonitoring {
             observeWorkspaceEvents()
         }
-        // Snapshot after registering: an app that launches in between is then
-        // reported by the notification rather than missing from both.
+        // Registration precedes the snapshot so the two overlap. An
+        // application appearing between them is reported by the notification;
+        // the reverse order would let it fall between the two and be treated as
+        // not running for the rest of the session.
         cacheRunningApplications()
         if startsEventMonitoring {
             do {
@@ -72,9 +96,9 @@ final class AppAudioStore: ObservableObject {
                     Task { @MainActor in
                         guard let self else { return }
                         if change.contains(.defaultOutputDevice) {
-                            // A new output device is a fresh chance to route, so
-                            // do not make the user wait out a backoff earned
-                            // against the device they just switched away from.
+                            // Routes are built against a specific device, so a
+                            // new one is a fresh attempt rather than a repeat of
+                            // whatever failed on the last.
                             self.engine.retryFailures()
                         }
                         self.refresh()
@@ -158,9 +182,10 @@ final class AppAudioStore: ObservableObject {
 
     func refreshVisiblePlaybackState() {
         do {
-            // Compared against what discovery last reported, not against the
-            // published list: the published list is filtered and identity
-            // resolved, so deriving the baseline from it would never match.
+            // The baseline is what discovery last reported, not the published
+            // list. The published list has been filtered and identity resolved,
+            // so a process that is discovered but never shown would register as
+            // a difference on every single check.
             guard try discovery.processSignature() != lastProcessSignature else { return }
         } catch {
             operationErrorMessage = error.localizedDescription
@@ -272,8 +297,12 @@ final class AppAudioStore: ObservableObject {
         }
     }
 
-    /// `nil` for apps this mixer never tracks. Note that `processIdentifier` is
-    /// `-1` for apps without a pid, so callers must tolerate duplicate keys.
+    /// The bundle ID to track this application under, or `nil` if the mixer
+    /// ignores it — background-only processes, anything without a bundle
+    /// identifier, and the mixer itself.
+    ///
+    /// Callers keying by PID must tolerate duplicates: applications without a
+    /// pid all report `-1`.
     private func trackedBundleID(of application: NSRunningApplication) -> String? {
         guard application.activationPolicy != .prohibited,
               let bundleID = application.bundleIdentifier,
@@ -302,7 +331,10 @@ final class AppAudioStore: ObservableObject {
         }
     }
 
-    /// Delivered on `.main`, so the body is already main-actor isolated.
+    /// Observes a workspace notification for as long as this store exists.
+    ///
+    /// Delivery is requested on the main queue, which is what lets the body run
+    /// as main-actor isolated without hopping.
     private func observeWorkspace(
         _ name: NSNotification.Name,
         _ body: @escaping @MainActor (AppAudioStore) -> Void
@@ -364,7 +396,12 @@ final class AppAudioStore: ObservableObject {
         refresh()
     }
 
-    /// A live timer is what "there are unsaved changes" means here.
+    /// Coalesces rapid setting changes into one write.
+    ///
+    /// Dragging a slider produces a change per frame, and each would otherwise
+    /// re-encode and store every setting. A pending timer is also the record
+    /// that unsaved changes exist, so `persistSettings` has nothing else to
+    /// consult.
     private func schedulePreferencesSave() {
         preferencesSaveTimer?.invalidate()
         preferencesSaveTimer = scheduledTimer(after: 0.25, repeats: false) { store in
@@ -394,10 +431,10 @@ final class AppAudioStore: ObservableObject {
             return
         }
         guard playbackCheckpointTimer == nil else { return }
-        // Only advances the playback clock. It used to run a full refresh —
-        // Core Audio discovery, list rebuild and re-applying every route — to
-        // credit elapsed seconds, which is all it actually needs. Change
-        // detection is the monitor's job.
+        // Playback time is credited from the interval between reconciliations,
+        // so a long uninterrupted stretch of playing needs a periodic mark to
+        // stay accounted for. Only the clock advances here; noticing change is
+        // the activity monitor's job.
         playbackCheckpointTimer = scheduledTimer(after: 60, repeats: true) { store in
             store.accountCurrentPlayback(until: Date())
         }
@@ -415,8 +452,10 @@ final class AppAudioStore: ObservableObject {
         }
     }
 
-    /// Timers scheduled here fire on the main run loop, so the body is already
-    /// main-actor isolated and needs no hop.
+    /// Schedules a timer whose body runs as main-actor isolated.
+    ///
+    /// `Timer.scheduledTimer` installs on the current run loop, which here is
+    /// always the main one, so the body is already on the main actor.
     private func scheduledTimer(
         after interval: TimeInterval,
         repeats: Bool,
@@ -433,9 +472,8 @@ final class AppAudioStore: ObservableObject {
     private func publishAppsIfChanged(_ refreshedApps: [AudioApp]) {
         guard apps != refreshedApps else { return }
         apps = refreshedApps
-        // Nothing renders a row for an app that is not published, so no view can
-        // still be observing its control. Without this the map grows for the
-        // lifetime of the process.
+        // Controls are created on demand per row and observed by that row, so
+        // the published list bounds which ones can still have an observer.
         let visibleAppIDs = Set(refreshedApps.map(\.id))
         volumeControls = volumeControls.filter { visibleAppIDs.contains($0.key) }
     }

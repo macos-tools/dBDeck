@@ -1,5 +1,23 @@
 import Foundation
 
+/// Remembers which applications have played audio, for how long, and how
+/// recently.
+///
+/// This is what lets the mixer show an application that is not playing right
+/// now. Rows are ranked playing first, then running, then by accumulated
+/// playback time, so a list built from it is stable between sessions.
+///
+/// Left alone the list would only grow, so once it exceeds
+/// `visibleHistoryLimit` entries anything untouched for `dormantHistoryInterval`
+/// is hidden. That pass runs at most once every `visibilityMaintenanceInterval`,
+/// because rows disappearing while someone is looking at them is worse than
+/// carrying a few extra for a day. Hidden rows are kept, not deleted: playing or
+/// launching the application brings it straight back with its history intact.
+///
+/// Records are keyed by bundle identifier, which is also how they are matched
+/// against live discovery, so a row and a playing application have to agree on
+/// it. Helper processes inside an application bundle are folded into their
+/// parent so an application cannot occupy several rows.
 final class PlaybackHistoryStore {
     static let visibleHistoryLimit = 10
     static let dormantHistoryInterval: TimeInterval = 7 * 24 * 60 * 60
@@ -12,9 +30,12 @@ final class PlaybackHistoryStore {
     private var recordsByBundleID: [String: AppPlaybackRecord]
     private var hiddenBundleIDs: Set<String>
     private var lastVisibilityMaintenanceAt: Date?
-    /// Only records written by older versions can name a bundle nested inside
-    /// another app; discovery canonicalizes before writing. Tracking whether any
-    /// remain keeps the merge scan off the steady-state path.
+    /// Whether any record names a bundle nested inside another application, and
+    /// so might still need folding into its parent.
+    ///
+    /// Records created from discovery are already resolved to the outermost
+    /// application, so in the ordinary case this is false and the fold is
+    /// skipped entirely.
     private var mayHaveNestedRecords: Bool
 
     init(
@@ -32,8 +53,7 @@ final class PlaybackHistoryStore {
         lastVisibilityMaintenanceAt = defaults.object(
             forKey: lastVisibilityMaintenanceKey
         ) as? Date
-        // Re-encoding every record on launch is wasted work unless loading
-        // actually rewrote something.
+        // Loading only writes back when it had to reshape what it read.
         if loaded.didNormalize {
             save()
         }
@@ -63,6 +83,11 @@ final class PlaybackHistoryStore {
         }
     }
 
+    /// Credits `elapsed` seconds to each observed application and records that
+    /// it played at `now`.
+    ///
+    /// Called with zero elapsed to note that an application is playing without
+    /// yet crediting time; the interval is credited on the following call.
     func observe(
         _ observations: [PlaybackObservation],
         elapsed: TimeInterval,
@@ -128,8 +153,10 @@ final class PlaybackHistoryStore {
         }
     }
 
-    /// True when the record names a bundle that lives inside another `.app`.
-    /// Pure path arithmetic — no disk access.
+    /// Whether the record's bundle lives inside another `.app`, such as a helper
+    /// process under its parent application.
+    ///
+    /// Decided from the path alone, with no filesystem access.
     private static func isNested(_ record: AppPlaybackRecord) -> Bool {
         guard let bundlePath = record.bundlePath else { return false }
         let originalURL = URL(fileURLWithPath: bundlePath).standardizedFileURL
@@ -145,9 +172,10 @@ final class PlaybackHistoryStore {
         playingBundleIDs: Set<String>,
         runningBundleIDs: Set<String>
     ) -> [AppPlaybackRecord] {
-        // Decorate once rather than recomputing both operands' priority on every
-        // comparison. The name tie-break stays locale-aware: collapsing it to a
-        // plain string compare would reorder non-ASCII app names.
+        // Each record's tier is worked out once and carried into the sort,
+        // rather than being recomputed for both sides of every comparison. The
+        // name tie-break stays locale-aware, since ordering names by raw code
+        // point would be wrong in most languages.
         recordsByBundleID.values
             .map { record in
                 (
@@ -172,6 +200,11 @@ final class PlaybackHistoryStore {
             .map(\.record)
     }
 
+    /// Runs the dormancy pass that decides which rows are hidden.
+    ///
+    /// Anything playing or running is unhidden immediately; the rest of the pass
+    /// is rate limited to `visibilityMaintenanceInterval` so the list does not
+    /// rearrange itself under the reader.
     func updateHiddenRecordsIfNeeded(
         installedRecords: [AppPlaybackRecord],
         playingBundleIDs: Set<String>,

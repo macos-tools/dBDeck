@@ -4,6 +4,11 @@ import Foundation
 import Testing
 @testable import dBDeck
 
+/// Covers how routes are reconciled against the current settings and output
+/// device, and how failures are retried.
+///
+/// The engine's Core Audio dependencies are injected, so these run against stub
+/// routes and a controlled clock with no audio hardware involved.
 @Suite("App audio engine")
 struct AppAudioEngineTests {
     @Test func reusesTheRouteWhileTheOutputDeviceIsUnchanged() {
@@ -35,8 +40,9 @@ struct AppAudioEngineTests {
         #expect(environment.createdRoutes[1].outputDeviceUID == "device-B")
     }
 
-    /// The regression this suite exists for: a failure during an output-device
-    /// switch used to be cached forever, leaving the app at full volume.
+    /// A failure must never be terminal. While a route is down the application
+    /// plays at full volume with its slider still showing the chosen level, so
+    /// a transient error has to resolve itself without the user intervening.
     @Test func retriesATransientFailureOnceTheBackoffElapses() {
         let environment = RouteEnvironment()
         let engine = environment.makeEngine()
@@ -46,7 +52,8 @@ struct AppAudioEngineTests {
         #expect(engine.apply(setting(0.5), to: app) == "device busy")
         #expect(environment.createCallCount == 1)
 
-        // Still inside the backoff window: the message is replayed, not retried.
+        // Inside the delay the stored message is reported again and no
+        // attempt is made.
         #expect(engine.apply(setting(0.5), to: app) == "device busy")
         #expect(environment.createCallCount == 1)
 
@@ -67,7 +74,7 @@ struct AppAudioEngineTests {
         _ = engine.apply(setting(0.5), to: app)
 
         for _ in 0..<8 {
-            // One tick short of the deadline must not re-attempt.
+            // Just short of the deadline nothing should be attempted.
             environment.advance(by: expectedDelay - 0.01)
             _ = engine.apply(setting(0.5), to: app)
             #expect(environment.createCallCount == attempts)
@@ -140,7 +147,8 @@ struct AppAudioEngineTests {
         #expect(environment.createCallCount == 3)
         #expect(environment.outputDeviceLookupCount == 1)
 
-        // Outside a pass every call reads afresh, so the cache cannot go stale.
+        // Outside a pass each call resolves the device again, so the shared
+        // value cannot be carried into a later pass.
         for app in apps {
             _ = engine.apply(setting(0.4), to: app)
         }

@@ -1,5 +1,11 @@
 import Foundation
 
+/// Finds the application a path belongs to.
+///
+/// Audio often comes from a helper nested inside an application rather than the
+/// application itself — a browser's renderer, a plug-in host. Walking out to the
+/// outermost `.app` is what attributes that audio to the application a person
+/// would recognise.
 enum ApplicationBundleResolver {
     static func outermostApplicationURL(containing url: URL) -> URL? {
         var applicationURL: URL?

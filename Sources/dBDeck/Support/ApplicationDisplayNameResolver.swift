@@ -1,11 +1,20 @@
 import Foundation
 
+/// Resolves the name to show for an application, in the reader's language.
+///
+/// An application's localized name lives in the `InfoPlist.strings` of whichever
+/// localization best matches the reader's preferences, falling back to the
+/// bundle's `Info.plist` and finally to the file name. Reading it means opening
+/// and parsing a file inside another application's bundle, so results are
+/// cached.
 enum ApplicationDisplayNameResolver {
     private static let cacheLock = NSLock()
     private static var cachedNames: [String: String] = [:]
 
-    /// Called when the user asks for a rescan, so an app updated in place is
-    /// picked up rather than kept under its old name for the session.
+    /// Forgets every resolved name.
+    ///
+    /// Names are cached for the life of the process, so this is how an
+    /// application that was renamed, moved or updated in place is picked up.
     static func clearCache() {
         cacheLock.lock()
         defer { cacheLock.unlock() }
@@ -16,8 +25,8 @@ enum ApplicationDisplayNameResolver {
         for applicationURL: URL,
         preferredLanguages: [String] = Locale.preferredLanguages
     ) -> String {
-        // The language preferences are part of the key, so a caller passing its
-        // own preferences never reads a name resolved under different ones.
+        // The requested languages are part of the key, so a caller asking for
+        // a specific localization never receives one resolved for another.
         let cacheKey = applicationURL.standardizedFileURL.path
             + "\u{0}"
             + preferredLanguages.joined(separator: ",")

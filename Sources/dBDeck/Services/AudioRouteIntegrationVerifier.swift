@@ -16,6 +16,11 @@ enum AudioRouteVerificationError: LocalizedError {
     }
 }
 
+/// Exercises a real route end to end against a real playing process.
+///
+/// Builds a route at reduced gain, holds it, drops to silence, and tears it
+/// down, so the audible result confirms the Core Audio path that unit tests
+/// necessarily stub out. Driven by `script/verify_route.sh`.
 struct AudioRouteIntegrationVerifier {
     func run(processID: pid_t) throws {
         guard processID > 0 else {

@@ -1,5 +1,10 @@
 import SwiftUI
 
+/// One application's row: icon, name, playback state, and the volume and mute
+/// controls.
+///
+/// The slider runs to 200%, so the readout and the mute state are shown as text
+/// as well; a slider position alone does not distinguish quiet from muted.
 struct AppVolumeRow: View {
     let app: AudioApp
     @ObservedObject var control: AppVolumeControl

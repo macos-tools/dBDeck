@@ -1,10 +1,23 @@
 import AppKit
 import Foundation
 
+/// Turns playback history rows back into applications the mixer can display.
+///
+/// A row records that an application played, not where it is now. It may have
+/// been moved, updated, or uninstalled since. Resolution tries Launch Services
+/// first and the remembered path second, and requires the bundle identifier to
+/// match either way so a row cannot latch onto a different application that
+/// happens to sit where the old one did.
+///
+/// Applications that cannot be found are remembered as unavailable and not
+/// retried until something suggests they are back — that application launching,
+/// or the user asking for a rescan.
 final class HistoricalApplicationResolver {
-    /// How long a resolved app is trusted to still be installed before its path
-    /// is stat'd again. Without a budget every history row cost a syscall on
-    /// every refresh, including cache hits.
+    /// How long a resolved application is trusted to still be installed before
+    /// its location is checked again.
+    ///
+    /// Bounds how long a deleted application can linger in the list, against
+    /// checking the filesystem for every row on every refresh.
     static let availabilityRecheckInterval: TimeInterval = 10
 
     private struct CachedIdentity {
@@ -31,8 +44,9 @@ final class HistoricalApplicationResolver {
 
     func retryAllUnavailableApplications() {
         unavailableBundleIDs.removeAll()
-        // Drop resolved names and icons too, so an explicit rescan picks up an
-        // app that was moved, renamed or updated in place.
+        // Names and icons go as well, so a rescan reflects an application that
+        // was moved, renamed or updated rather than reusing what was resolved
+        // before.
         identitiesByBundleID.removeAll()
     }
 

@@ -4,6 +4,8 @@ import Foundation
 import Testing
 @testable import dBDeck
 
+/// Covers what the store publishes and when it goes back to discovery, using
+/// stub discovery and routing so no audio hardware is involved.
 @Suite("App audio store")
 @MainActor
 struct AppAudioStoreTests {
@@ -32,10 +34,10 @@ struct AppAudioStoreTests {
         let (defaults, suiteName) = try isolatedDefaults("VisibleRefresh")
         defer { defaults.removePersistentDomain(forName: suiteName) }
         let original = audioApp("player", name: "Player", processID: 21)
-        // 99 stands for a process discovery sees but never publishes, such as an
-        // excluded or unresolvable one. Deriving the comparison baseline from
-        // the published app list would mismatch on it every single tick and
-        // turn the fast path into a full refresh once a second.
+        // 99 is a process that discovery reports but never publishes, as an
+        // excluded or unresolvable one would be. The check has to compare
+        // against what discovery last reported: comparing against the published
+        // list would treat that process as a difference every time.
         let discovery = StubAudioDiscovery(apps: [original], extraSignatureIDs: [99])
         let store = AppAudioStore(
             preferences: VolumePreferences(defaults: defaults),

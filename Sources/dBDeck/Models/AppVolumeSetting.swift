@@ -1,11 +1,21 @@
 import Foundation
 
+/// One application's volume, from silent through unity to `maximumVolume`
+/// (+6 dB).
+///
+/// Unmuted unity is the passthrough case: the application is left untouched,
+/// with no tap and no processing, which is both the cheapest state and the one
+/// with no effect on audio quality.
 struct AppVolumeSetting: Codable, Equatable {
     static let maximumVolume: Double = 2
     static let passthrough = AppVolumeSetting(volume: 1, isMuted: false)
 
-    /// Always normalized: clamped to 0...maximumVolume and snapped to exactly
-    /// 1 near passthrough, so no un-normalized value of this type can exist.
+    /// The volume, held normalized so no un-normalized value of this type can
+    /// exist: clamped to `0...maximumVolume`, and snapped to exactly 1 when
+    /// close enough that the difference is inaudible.
+    ///
+    /// The snap matters because exactly 1 unmuted is what `needsProcessing`
+    /// tests to decide that an application can be left alone entirely.
     private var storedVolume: Double
     var isMuted: Bool
 

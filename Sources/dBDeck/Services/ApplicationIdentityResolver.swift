@@ -1,6 +1,13 @@
 import AppKit
 import Foundation
 
+/// Works out which application an audio process belongs to.
+///
+/// Audio processes identify themselves inconsistently. Most can be matched to a
+/// running application by pid. Some report a bundle identifier instead, which
+/// may name an application that is installed but not running. Some — helper
+/// processes spawned by a parent — report nothing useful, and are attributed by
+/// walking up the parent process chain until a known application is found.
 struct ApplicationIdentityResolver {
     func resolve(
         pid: pid_t,
@@ -58,9 +65,12 @@ struct ApplicationIdentityResolver {
         )
     }
 
-    /// The one place that decides an installed app's bundle ID, name and icon
-    /// from a URL. Shared so history and live discovery cannot label the same
-    /// app differently.
+    /// The identity of the application at `url`, resolved to the outermost
+    /// `.app` containing it.
+    ///
+    /// The single rule for turning a location into a bundle identifier, name and
+    /// icon. Live discovery and playback history both go through it, so one
+    /// application cannot be labelled two ways depending on which found it.
     static func identity(forApplicationURL url: URL) -> ApplicationIdentity? {
         guard let applicationURL = ApplicationBundleResolver
             .outermostApplicationURL(containing: url),

@@ -1,5 +1,9 @@
 import Combine
 
+/// The observable handle a single mixer row binds to.
+///
+/// One per application, so moving one slider redraws that row rather than the
+/// whole list.
 @MainActor
 final class AppVolumeControl: ObservableObject {
     @Published private(set) var setting: AppVolumeSetting

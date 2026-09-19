@@ -1,9 +1,12 @@
 import Foundation
 
 extension UserDefaults {
-    /// Both stores keep their state as one JSON blob under a single key. A
-    /// failure to decode means the value is missing or written by a version
-    /// this one cannot read, and in both cases starting empty is correct.
+    /// Reads a value stored as JSON, or `nil` if there is none that this
+    /// version can read.
+    ///
+    /// Both stores keep their whole state as one blob under a single key. An
+    /// unreadable value is treated as an absent one: state this app owns
+    /// entirely and can rebuild is not worth failing a launch over.
     func codable<Value: Decodable>(_ type: Value.Type, forKey key: String) -> Value? {
         guard let data = data(forKey: key) else { return nil }
         return try? JSONDecoder().decode(type, from: data)

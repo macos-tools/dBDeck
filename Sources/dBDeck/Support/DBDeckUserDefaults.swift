@@ -1,12 +1,12 @@
 import Foundation
 
 extension UserDefaults {
-    /// The defaults this app stores its state in.
+    /// The defaults this app stores its settings and playback history in.
     ///
-    /// Verification runs launch the real app binary while audio plays, which
-    /// would otherwise write fixture apps into the user's real playback
-    /// history. They pass a throwaway suite instead, so nothing has to be
-    /// scrubbed back out afterwards.
+    /// Normally the standard domain. Debug builds accept `--defaults-suite` to
+    /// redirect it, which is how the route verification script exercises the
+    /// real binary against real audio without its fixtures reaching anyone's
+    /// saved state.
     static var dbdeck: UserDefaults {
 #if DEBUG
         let arguments = ProcessInfo.processInfo.arguments

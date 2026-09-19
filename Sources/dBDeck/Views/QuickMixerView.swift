@@ -1,5 +1,11 @@
 import SwiftUI
 
+/// The mixer itself: one row per application, with a rescan and a reset in the
+/// header and any current error above the list.
+///
+/// While this view is on screen it checks once a second for applications
+/// starting or stopping playback, which covers the gap between Core Audio
+/// noticing a change and it mattering to someone actually looking at the list.
 struct QuickMixerView: View {
     @ObservedObject var store: AppAudioStore
 

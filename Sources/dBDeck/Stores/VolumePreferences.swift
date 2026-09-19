@@ -1,5 +1,7 @@
 import Foundation
 
+/// Persists each application's volume and mute state, keyed by bundle
+/// identifier so settings survive the application restarting.
 final class VolumePreferences {
     private let defaults: UserDefaults
     private let storageKey = "appVolumeSettings.v1"

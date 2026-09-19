@@ -1,5 +1,10 @@
 import Foundation
 
+/// One application's entry in the playback history.
+///
+/// Keyed by bundle identifier, which is also how it is matched against live
+/// discovery. `bundlePath` is the last place the application was seen, used to
+/// find it again if it is no longer registered with Launch Services.
 struct AppPlaybackRecord: Codable, Equatable, Identifiable {
     var id: String { bundleID }
 
@@ -9,6 +14,8 @@ struct AppPlaybackRecord: Codable, Equatable, Identifiable {
     var playbackSeconds: TimeInterval = 0
     var lastPlayedAt: Date
 
+    /// Playback time at the resolution it was stored in before seconds, and the
+    /// value the legacy decoding path below reads back.
     var playbackMinutes: Int {
         Int(playbackSeconds / 60)
     }
@@ -26,9 +33,9 @@ struct AppPlaybackRecord: Codable, Equatable, Identifiable {
     }
 }
 
-// In an extension so the memberwise initializer is still synthesized, and so
-// only the decoder is hand-written: `encode(to:)` is exactly what synthesis
-// produces from CodingKeys above.
+// Declared in an extension so the memberwise initializer is still synthesized.
+// Only decoding is hand-written, to accept the older on-disk shape; encoding is
+// whatever the coding keys above describe.
 extension AppPlaybackRecord {
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
@@ -43,7 +50,9 @@ extension AppPlaybackRecord {
         ) {
             playbackSeconds = seconds
         } else {
-            // Versions before playback time was tracked in seconds wrote minutes.
+            // Playback time was stored as whole minutes before it was stored
+            // as seconds. Reading it back at minute resolution keeps a long
+            // history rather than resetting the totals.
             let legacy = try decoder.container(keyedBy: LegacyCodingKeys.self)
             let minutes = try legacy.decodeIfPresent(Int.self, forKey: .playbackMinutes) ?? 0
             playbackSeconds = Double(minutes * 60)
