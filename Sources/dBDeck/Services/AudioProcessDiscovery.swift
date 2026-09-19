@@ -49,12 +49,15 @@ struct AudioProcessDiscovery: AudioProcessDiscovering {
             .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
     }
 
+#if DEBUG
+    /// Used only by `AudioRouteIntegrationVerifier`, which is itself `#if DEBUG`.
     func activeProcessObjectIDs(for processID: pid_t) throws -> [AudioObjectID] {
         try activeOutputProcesses()
             .filter { $0.pid == processID }
             .map(\.audioObjectID)
             .sorted()
     }
+#endif
 
     func activeProcessObjectIDs() throws -> [AudioObjectID] {
         try resolvedProcessRecords()
@@ -63,10 +66,12 @@ struct AudioProcessDiscovery: AudioProcessDiscovering {
     }
 
     private func resolvedProcessRecords() throws -> [ProcessRecord] {
+        // `processIdentifier` is -1 for apps without a pid, so keys can repeat.
         let runningApplications = Dictionary(
-            uniqueKeysWithValues: NSWorkspace.shared.runningApplications.map {
+            NSWorkspace.shared.runningApplications.map {
                 ($0.processIdentifier, $0)
-            }
+            },
+            uniquingKeysWith: { _, latest in latest }
         )
 
         return try activeProcesses().compactMap { process -> ProcessRecord? in

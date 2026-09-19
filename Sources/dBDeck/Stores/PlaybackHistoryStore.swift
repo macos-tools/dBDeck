@@ -38,9 +38,11 @@ final class PlaybackHistoryStore {
     }
 
     func removeRecords(for bundleIDs: Set<String>) {
-        let recordsChanged = bundleIDs.reduce(into: false) { changed, bundleID in
-            changed = recordsByBundleID.removeValue(forKey: bundleID) != nil || changed
+        let countBeforeRemoval = recordsByBundleID.count
+        for bundleID in bundleIDs {
+            recordsByBundleID[bundleID] = nil
         }
+        let recordsChanged = recordsByBundleID.count != countBeforeRemoval
         let hiddenChanged = !hiddenBundleIDs.isDisjoint(with: bundleIDs)
         hiddenBundleIDs.subtract(bundleIDs)
         if recordsChanged {
@@ -79,18 +81,16 @@ final class PlaybackHistoryStore {
                 needsSave = true
             }
 
-            var record = recordsByBundleID[observation.bundleID] ?? AppPlaybackRecord(
+            let existingRecord = recordsByBundleID[observation.bundleID]
+            var record = existingRecord ?? AppPlaybackRecord(
                 bundleID: observation.bundleID,
                 name: observation.name,
                 bundlePath: observation.bundlePath,
-                playbackSeconds: inheritedSeconds,
                 lastPlayedAt: now
             )
-            if recordsByBundleID[observation.bundleID] != nil {
-                record.playbackSeconds += inheritedSeconds
-            }
+            record.playbackSeconds += inheritedSeconds
 
-            if recordsByBundleID[observation.bundleID] == nil
+            if existingRecord == nil
                 || record.name != observation.name
                 || record.bundlePath != observation.bundlePath {
                 needsSave = true
@@ -147,9 +147,10 @@ final class PlaybackHistoryStore {
         let previousHiddenBundleIDs = hiddenBundleIDs
         hiddenBundleIDs.subtract(activeBundleIDs)
 
-        guard lastVisibilityMaintenanceAt.map({
+        let isMaintenanceDue = lastVisibilityMaintenanceAt.map {
             now.timeIntervalSince($0) >= Self.visibilityMaintenanceInterval
-        }) ?? true else {
+        } ?? true
+        guard isMaintenanceDue else {
             if hiddenBundleIDs != previousHiddenBundleIDs {
                 saveVisibilityState()
             }

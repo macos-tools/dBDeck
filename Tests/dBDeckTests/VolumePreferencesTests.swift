@@ -21,10 +21,10 @@ struct VolumePreferencesTests {
     }
 
     @Test func normalizationClampsAndSnapsVolume() {
-        #expect(AppVolumeSetting(volume: -1, isMuted: false).normalized.volume == 0)
-        #expect(AppVolumeSetting(volume: 2, isMuted: false).normalized.volume == 2)
-        #expect(AppVolumeSetting(volume: 3, isMuted: false).normalized.volume == 2)
-        #expect(AppVolumeSetting(volume: 1.0000000001, isMuted: false).normalized.volume == 1)
+        #expect(AppVolumeSetting(volume: -1, isMuted: false).volume == 0)
+        #expect(AppVolumeSetting(volume: 2, isMuted: false).volume == 2)
+        #expect(AppVolumeSetting(volume: 3, isMuted: false).volume == 2)
+        #expect(AppVolumeSetting(volume: 1.0000000001, isMuted: false).volume == 1)
     }
 
     @Test func onlyExactlyUnmuted100PercentUsesPassthrough() {

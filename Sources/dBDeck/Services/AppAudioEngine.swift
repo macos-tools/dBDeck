@@ -19,7 +19,6 @@ final class AppAudioEngine: AppAudioRouting {
     private var failures: [String: FailedConfiguration] = [:]
 
     func apply(_ setting: AppVolumeSetting, to app: AudioApp) -> String? {
-        let setting = setting.normalized
         guard setting.needsProcessing else {
             removeRoute(for: app.id)
             failures[app.id] = nil

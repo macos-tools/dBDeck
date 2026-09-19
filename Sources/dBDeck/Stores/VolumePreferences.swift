@@ -15,11 +15,11 @@ final class VolumePreferences {
         else {
             return [:]
         }
-        return decoded.mapValues(\.normalized)
+        return decoded
     }
 
     func save(_ settings: [String: AppVolumeSetting]) {
-        guard let data = try? JSONEncoder().encode(settings.mapValues(\.normalized)) else {
+        guard let data = try? JSONEncoder().encode(settings) else {
             return
         }
         defaults.set(data, forKey: storageKey)

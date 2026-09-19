@@ -51,17 +51,7 @@ final class AudioActivityMonitor {
                 operation: "Watch default output device"
             )
         } catch {
-            var processAddress = CoreAudioSupport.address(
-                kAudioHardwarePropertyProcessObjectList
-            )
-            AudioObjectRemovePropertyListenerBlock(
-                CoreAudioSupport.systemObject,
-                &processAddress,
-                queue,
-                listener
-            )
-            processListListener = nil
-            defaultOutputListener = nil
+            queue.sync { removeAllListeners() }
             throw error
         }
 

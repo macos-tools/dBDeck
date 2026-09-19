@@ -114,9 +114,7 @@ final class AppAudioStore: ObservableObject {
         settingsNeedSave = true
         persistSettings()
 
-        for app in apps where app.isPlaying {
-            _ = engine.apply(.passthrough, to: app)
-        }
+        engine.stopAll()
         routeErrorsByAppID.removeAll()
         publishErrorMessage()
     }
@@ -142,13 +140,12 @@ final class AppAudioStore: ObservableObject {
                 .flatMap(\.processIDs)
                 .sorted()
             guard discoveredProcesses != publishedProcesses else { return }
-            let now = Date()
-            let activeApps = try discovery.activeApps()
-            refresh(activeApps: activeApps, now: now)
         } catch {
             operationErrorMessage = error.localizedDescription
             publishErrorMessage()
+            return
         }
+        refresh()
     }
 
     func refresh() {
@@ -174,20 +171,21 @@ final class AppAudioStore: ObservableObject {
     }
 
     private func update(_ newSetting: AppVolumeSetting, for app: AudioApp) {
-        let normalizedSetting = newSetting.normalized
-        guard settings[app.id] != normalizedSetting else { return }
-        settings[app.id] = normalizedSetting
-        volumeControls[app.id]?.update(normalizedSetting)
+        guard settings[app.id] != newSetting else { return }
+        settings[app.id] = newSetting
+        volumeControls[app.id]?.update(newSetting)
         settingsNeedSave = true
         schedulePreferencesSave()
         if app.isPlaying {
-            if let message = engine.apply(normalizedSetting, to: app) {
-                routeErrorsByAppID[app.id] = "\(app.name): \(message)"
-            } else {
-                routeErrorsByAppID[app.id] = nil
-            }
+            applyRoute(newSetting, to: app)
         }
         publishErrorMessage()
+    }
+
+    private func applyRoute(_ setting: AppVolumeSetting, to app: AudioApp) {
+        routeErrorsByAppID[app.id] = engine.apply(setting, to: app).map {
+            "\(app.name): \($0)"
+        }
     }
 
     private func refresh(activeApps: [AudioApp], now: Date) {
@@ -213,11 +211,7 @@ final class AppAudioStore: ObservableObject {
         engine.retainOnly(appIDs: activeAppIDs)
         routeErrorsByAppID = routeErrorsByAppID.filter { activeAppIDs.contains($0.key) }
         for app in activeApps {
-            if let message = engine.apply(setting(for: app), to: app) {
-                routeErrorsByAppID[app.id] = "\(app.name): \(message)"
-            } else {
-                routeErrorsByAppID[app.id] = nil
-            }
+            applyRoute(setting(for: app), to: app)
         }
         operationErrorMessage = nil
         publishErrorMessage()
@@ -225,17 +219,25 @@ final class AppAudioStore: ObservableObject {
 
     private func cacheRunningApplications() {
         runningApplicationBundleIDsByPID = Dictionary(
-            uniqueKeysWithValues: NSWorkspace.shared.runningApplications.compactMap {
+            NSWorkspace.shared.runningApplications.compactMap {
                 application -> (pid_t, String)? in
-                guard application.activationPolicy != .prohibited,
-                      let bundleID = application.bundleIdentifier,
-                      !excludedBundleIDs.contains(bundleID)
-                else {
-                    return nil
-                }
+                guard let bundleID = trackedBundleID(of: application) else { return nil }
                 return (application.processIdentifier, bundleID)
-            }
+            },
+            uniquingKeysWith: { _, latest in latest }
         )
+    }
+
+    /// `nil` for apps this mixer never tracks. Note that `processIdentifier` is
+    /// `-1` for apps without a pid, so callers must tolerate duplicate keys.
+    private func trackedBundleID(of application: NSRunningApplication) -> String? {
+        guard application.activationPolicy != .prohibited,
+              let bundleID = application.bundleIdentifier,
+              !excludedBundleIDs.contains(bundleID)
+        else {
+            return nil
+        }
+        return bundleID
     }
 
     private func observeWorkspaceEvents() {
@@ -289,12 +291,7 @@ final class AppAudioStore: ObservableObject {
     }
 
     private func applicationDidLaunch(_ application: NSRunningApplication) {
-        guard application.activationPolicy != .prohibited,
-              let bundleID = application.bundleIdentifier,
-              !excludedBundleIDs.contains(bundleID)
-        else {
-            return
-        }
+        guard let bundleID = trackedBundleID(of: application) else { return }
         runningApplicationBundleIDsByPID[application.processIdentifier] = bundleID
         historicalApplications.retryUnavailableApplication(bundleID: bundleID)
         guard playbackHistory.containsRecord(for: bundleID) else { return }
@@ -377,7 +374,7 @@ final class AppAudioStore: ObservableObject {
     }
 
     private func publishAppsIfChanged(_ refreshedApps: [AudioApp]) {
-        guard !Self.sameVisibleState(apps, refreshedApps) else { return }
+        guard apps != refreshedApps else { return }
         apps = refreshedApps
     }
 
@@ -418,19 +415,6 @@ final class AppAudioStore: ObservableObject {
             ) ? nil : app
         }
         publishAppsIfChanged(refreshedApps)
-    }
-
-    private static func sameVisibleState(_ lhs: [AudioApp], _ rhs: [AudioApp]) -> Bool {
-        guard lhs.count == rhs.count else { return false }
-        return zip(lhs, rhs).allSatisfy { left, right in
-            left.id == right.id
-                && left.bundleID == right.bundleID
-                && left.name == right.name
-                && left.bundleURL == right.bundleURL
-                && left.processIDs == right.processIDs
-                && left.isPlaying == right.isPlaying
-                && left.isRunning == right.isRunning
-        }
     }
 
     private func setErrorMessage(_ message: String?) {
