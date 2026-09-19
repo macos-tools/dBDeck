@@ -2,6 +2,7 @@
 set -euo pipefail
 
 MODE="${1:-run}"
+RELEASE_ARCH="${2:-}"
 APP_NAME="dBDeck"
 BUNDLE_ID="com.dbdeck.mac"
 MIN_SYSTEM_VERSION="14.2"
@@ -16,7 +17,7 @@ case "$MODE" in
   run|--debug|debug|--logs|logs|--telemetry|telemetry|--verify|verify|--stage|stage|--release-stage|release-stage)
     ;;
   *)
-    echo "usage: $0 [run|--debug|--logs|--telemetry|--verify|--stage|--release-stage]" >&2
+    echo "usage: $0 [run|--debug|--logs|--telemetry|--verify|--stage|--release-stage <arch>]" >&2
     exit 2
     ;;
 esac
@@ -40,7 +41,16 @@ case "$MODE" in
     APP_BUNDLE="$VERIFY_DIR/$APP_NAME.app"
     ;;
   --release-stage|release-stage)
-    APP_BUNDLE="$VERIFY_DIR/release/$APP_NAME.app"
+    # Release builds are per architecture, one thin binary each, so a download
+    # carries only the code the machine can run.
+    case "$RELEASE_ARCH" in
+      arm64|x86_64) ;;
+      *)
+        echo "usage: $0 --release-stage <arm64|x86_64>" >&2
+        exit 2
+        ;;
+    esac
+    APP_BUNDLE="$VERIFY_DIR/release/$RELEASE_ARCH/$APP_NAME.app"
     ;;
   *)
     stop_app
@@ -50,38 +60,21 @@ esac
 
 cd "$ROOT_DIR"
 if [[ "$MODE" == "--release-stage" || "$MODE" == "release-stage" ]]; then
-  RELEASE_BUILD_DIR="$ROOT_DIR/.build/release-universal"
-  ARM_BUILD_DIR="$RELEASE_BUILD_DIR/arm64"
-  INTEL_BUILD_DIR="$RELEASE_BUILD_DIR/x86_64"
+  RELEASE_BUILD_DIR="$ROOT_DIR/.build/release-$RELEASE_ARCH"
+  RELEASE_TRIPLE="$RELEASE_ARCH-apple-macosx$MIN_SYSTEM_VERSION"
 
   swift build \
     --disable-sandbox \
     --configuration release \
-    --triple "arm64-apple-macosx$MIN_SYSTEM_VERSION" \
-    --scratch-path "$ARM_BUILD_DIR" \
+    --triple "$RELEASE_TRIPLE" \
+    --scratch-path "$RELEASE_BUILD_DIR" \
     --product "$APP_NAME"
-  ARM_BINARY="$(swift build \
+  BUILD_BINARY="$(swift build \
     --disable-sandbox \
     --configuration release \
-    --triple "arm64-apple-macosx$MIN_SYSTEM_VERSION" \
-    --scratch-path "$ARM_BUILD_DIR" \
+    --triple "$RELEASE_TRIPLE" \
+    --scratch-path "$RELEASE_BUILD_DIR" \
     --show-bin-path)/$APP_NAME"
-
-  swift build \
-    --disable-sandbox \
-    --configuration release \
-    --triple "x86_64-apple-macosx$MIN_SYSTEM_VERSION" \
-    --scratch-path "$INTEL_BUILD_DIR" \
-    --product "$APP_NAME"
-  INTEL_BINARY="$(swift build \
-    --disable-sandbox \
-    --configuration release \
-    --triple "x86_64-apple-macosx$MIN_SYSTEM_VERSION" \
-    --scratch-path "$INTEL_BUILD_DIR" \
-    --show-bin-path)/$APP_NAME"
-
-  BUILD_BINARY="$RELEASE_BUILD_DIR/$APP_NAME"
-  /usr/bin/lipo -create "$ARM_BINARY" "$INTEL_BINARY" -output "$BUILD_BINARY"
 else
   swift build --disable-sandbox --product "$APP_NAME"
   BUILD_BINARY="$(swift build --disable-sandbox --show-bin-path)/$APP_NAME"

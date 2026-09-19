@@ -31,7 +31,7 @@ The app stores the following data locally:
 
 ## Install and first launch
 
-1. Download the DMG from the Releases page.
+1. Download the DMG for your Mac from the Releases page: `arm64` for Apple silicon, `x86_64` for Intel. If you are unsure, check  > About This Mac.
 2. Open the DMG and drag dBDeck into the Applications folder.
 3. Launch dBDeck. Its icon appears in the menu bar at the top of the screen, rather than in the Dock at the bottom.
 4. When macOS requests System Audio Recording permission, grant it so dBDeck can adjust individual apps. Restart dBDeck if macOS asks you to.
@@ -71,13 +71,16 @@ Optional modes:
 ./script/build_and_run.sh --debug
 ```
 
-Create a release DMG and checksum that support both Apple silicon and Intel Macs:
+Create the release DMGs and checksums, one per architecture:
 
 ```sh
 ./script/package_dmg.sh 0.2.0
 ```
 
-The artifacts are written to `dist/dBDeck-0.2.0.dmg` and `dist/dBDeck-0.2.0.dmg.sha256`.
+Each build targets a single architecture, so a download carries only the code the Mac it lands on can run. The artifacts are written to:
+
+- `dist/dBDeck-0.2.0-arm64.dmg` and `dist/dBDeck-0.2.0-arm64.dmg.sha256`
+- `dist/dBDeck-0.2.0-x86_64.dmg` and `dist/dBDeck-0.2.0-x86_64.dmg.sha256`
 
 ## Current scope
 

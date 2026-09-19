@@ -29,7 +29,7 @@ dBDeck 不会录制、存储或传输音频，也没有联网功能。音频处�
 
 ## 安装与首次启动
 
-1. 从 Release 页面下载。
+1. 从 Release 页面下载对应你这台 Mac 的 DMG：Apple 芯片选 `arm64`，Intel 选 `x86_64`。不确定的话可以看  > 关于本机。
 2. 打开 DMG，将 dBDeck 拖入“应用程序”文件夹。
 3. 启动 dBDeck，它的图标会出现在菜单栏（上方）中，而不是 Dock（下方） 中。
 4. macOS 请求“系统音频录制”权限时请允许，以便 dBDeck 调节各个应用的音量；如果系统提示，请重新启动 dBDeck。
@@ -69,13 +69,16 @@ open "/Applications/dBDeck.app"
 ./script/build_and_run.sh --debug
 ```
 
-使用以下命令生成同时支持 Apple 芯片和 Intel Mac 的发布 DMG 与校验文件：
+使用以下命令按架构分别生成发布 DMG 与校验文件：
 
 ```sh
 ./script/package_dmg.sh 0.2.0
 ```
 
-产物会写入 `dist/dBDeck-0.2.0.dmg` 和 `dist/dBDeck-0.2.0.dmg.sha256`。
+每个版本只针对单一架构构建，因此下载到的包只包含这台 Mac 实际会运行的代码。产物会写入：
+
+- `dist/dBDeck-0.2.0-arm64.dmg` 与 `dist/dBDeck-0.2.0-arm64.dmg.sha256`
+- `dist/dBDeck-0.2.0-x86_64.dmg` 与 `dist/dBDeck-0.2.0-x86_64.dmg.sha256`
 
 ## 当前范围
 
