@@ -27,6 +27,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private let logger = Logger(subsystem: "com.dbdeck.mac", category: "App")
     private var mixerWindowController: NSWindowController?
+    private var statusItemController: StatusItemController?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         logger.info("Menu bar agent launched")
@@ -55,11 +56,44 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 #endif
 
+        statusItemController = StatusItemController(store: store)
+        installQuitShortcut()
+
         // One run-loop turn later, so the menu bar item is on screen before the
         // first discovery pass runs.
         Task { @MainActor [store] in
             store.refresh()
         }
+    }
+
+    /// Gives the panel a Quit shortcut without giving the app a menu bar.
+    ///
+    /// An accessory app never displays its menu bar, but `NSApplication` still
+    /// routes key equivalents through the main menu, so a menu that exists only
+    /// to carry Command-Q stays invisible and still works.
+    private func installQuitShortcut() {
+        let quitItem = NSMenuItem(
+            title: String(localized: "Quit"),
+            action: #selector(quitFromShortcut),
+            keyEquivalent: "q"
+        )
+        quitItem.target = self
+
+        let applicationMenu = NSMenu()
+        applicationMenu.addItem(quitItem)
+
+        let applicationMenuItem = NSMenuItem()
+        applicationMenuItem.submenu = applicationMenu
+
+        let mainMenu = NSMenu()
+        mainMenu.addItem(applicationMenuItem)
+        NSApp.mainMenu = mainMenu
+    }
+
+    /// Routed through the store so a keyboard quit tears routes down and flushes
+    /// state exactly as the panel's own Quit button does.
+    @objc private func quitFromShortcut() {
+        store.quit()
     }
 
     func applicationShouldHandleReopen(
@@ -98,26 +132,5 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         controller.showWindow(nil)
         controller.window?.makeKeyAndOrderFront(nil)
         logger.info("Mixer recovery window shown after app reopen")
-    }
-}
-
-/// A menu bar agent: no Dock icon and no main window, with the mixer presented
-/// from the status item.
-///
-/// `applicationShouldHandleReopen` opens the mixer in a window as well, which is
-/// the way back in if the menu bar is too full to show the status item.
-@main
-struct dBDeckApp: App {
-    @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
-    @State private var isMenuBarExtraInserted = true
-
-    var body: some Scene {
-        MenuBarExtra(isInserted: $isMenuBarExtraInserted) {
-            QuickMixerView(store: appDelegate.store)
-        } label: {
-            Image(nsImage: MenuBarIcon.image)
-                .accessibilityLabel("dBDeck")
-        }
-        .menuBarExtraStyle(.window)
     }
 }
