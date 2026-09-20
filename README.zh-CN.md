@@ -72,13 +72,13 @@ open "/Applications/dBDeck.app"
 使用以下命令按架构分别生成发布 DMG 与校验文件：
 
 ```sh
-./script/package_dmg.sh 0.2.1
+./script/package_dmg.sh 0.2.2
 ```
 
 每个版本只针对单一架构构建，因此下载到的包只包含这台 Mac 实际会运行的代码。产物会写入：
 
-- `dist/dBDeck-0.2.1-arm64.dmg` 与 `dist/dBDeck-0.2.1-arm64.dmg.sha256`
-- `dist/dBDeck-0.2.1-x86_64.dmg` 与 `dist/dBDeck-0.2.1-x86_64.dmg.sha256`
+- `dist/dBDeck-0.2.2-arm64.dmg` 与 `dist/dBDeck-0.2.2-arm64.dmg.sha256`
+- `dist/dBDeck-0.2.2-x86_64.dmg` 与 `dist/dBDeck-0.2.2-x86_64.dmg.sha256`
 
 ## 当前范围
 
