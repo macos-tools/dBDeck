@@ -10,8 +10,8 @@ import Testing
 @MainActor
 struct AppAudioStoreTests {
     @Test func updatingOneAppDoesNotClearAnotherAppsRouteError() throws {
-        let (defaults, suiteName) = try isolatedDefaults("Errors")
-        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let suite = try IsolatedDefaults("StoreErrors")
+        let defaults = suite.defaults
         let first = audioApp("one", name: "One", processID: 11)
         let second = audioApp("two", name: "Two", processID: 12)
         let discovery = StubAudioDiscovery(apps: [first, second])
@@ -31,8 +31,8 @@ struct AppAudioStoreTests {
     }
 
     @Test func visibleRefreshUsesLightweightSignatureUntilProcessesChange() throws {
-        let (defaults, suiteName) = try isolatedDefaults("VisibleRefresh")
-        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let suite = try IsolatedDefaults("StoreVisibleRefresh")
+        let defaults = suite.defaults
         let original = audioApp("player", name: "Player", processID: 21)
         // 99 is a process that discovery reports but never publishes, as an
         // excluded or unresolvable one would be. The check has to compare
@@ -61,8 +61,8 @@ struct AppAudioStoreTests {
     }
 
     @Test func excludesTheHostApplicationFromHistoryAndVisibleApps() throws {
-        let (defaults, suiteName) = try isolatedDefaults("SelfExclusion")
-        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let suite = try IsolatedDefaults("StoreSelfExclusion")
+        let defaults = suite.defaults
         let ownBundleID = "com.example.self"
         let ownApp = audioApp("self", name: "dBDeck", processID: 31)
         let history = PlaybackHistoryStore(defaults: defaults)
@@ -89,11 +89,6 @@ struct AppAudioStoreTests {
         #expect(store.apps.isEmpty)
         #expect(store.settings[ownBundleID] == nil)
         #expect(!history.containsRecord(for: ownBundleID))
-    }
-
-    private func isolatedDefaults(_ label: String) throws -> (UserDefaults, String) {
-        let suiteName = "dBDeckStore\(label)Tests.\(UUID().uuidString)"
-        return (try #require(UserDefaults(suiteName: suiteName)), suiteName)
     }
 
     private func audioApp(

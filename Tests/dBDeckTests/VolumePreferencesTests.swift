@@ -6,8 +6,8 @@ import Testing
 @Suite("Volume preferences")
 struct VolumePreferencesTests {
     @Test func saveAndLoadRoundTrip() throws {
-        let (defaults, suiteName) = try isolatedDefaults()
-        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let suite = try IsolatedDefaults("Volume")
+        let defaults = suite.defaults
         let preferences = VolumePreferences(defaults: defaults)
 
         preferences.save([
@@ -56,8 +56,4 @@ struct VolumePreferencesTests {
         #expect(unrelatedUpdateCount == 0)
     }
 
-    private func isolatedDefaults() throws -> (UserDefaults, String) {
-        let suiteName = "dBDeckVolumeTests.\(UUID().uuidString)"
-        return (try #require(UserDefaults(suiteName: suiteName)), suiteName)
-    }
 }

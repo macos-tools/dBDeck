@@ -5,8 +5,8 @@ import Testing
 @Suite("Playback history")
 struct PlaybackHistoryStoreTests {
     @Test func playbackSecondsPersistAndRankWithinActivityTiers() throws {
-        let (defaults, suiteName) = try isolatedDefaults("Playback")
-        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let suite = try IsolatedDefaults("Playback")
+        let defaults = suite.defaults
         let store = PlaybackHistoryStore(defaults: defaults)
         let start = Date(timeIntervalSince1970: 1_000)
         let music = observation("music", name: "Music")
@@ -51,8 +51,8 @@ struct PlaybackHistoryStoreTests {
     }
 
     @Test func nestedHelperMigrationPreservesPlaybackSeconds() throws {
-        let (defaults, suiteName) = try isolatedDefaults("HelperMigration")
-        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let suite = try IsolatedDefaults("HelperMigration")
+        let defaults = suite.defaults
         let store = PlaybackHistoryStore(defaults: defaults)
         let chromePath = "/Applications/Google Chrome.app"
 
@@ -84,8 +84,8 @@ struct PlaybackHistoryStoreTests {
             let lastPlayedAt: Date
         }
 
-        let (defaults, suiteName) = try isolatedDefaults("MinuteMigration")
-        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let suite = try IsolatedDefaults("MinuteMigration")
+        let defaults = suite.defaults
         defaults.set(
             try JSONEncoder().encode([
                 LegacyRecord(
@@ -103,8 +103,8 @@ struct PlaybackHistoryStoreTests {
     }
 
     @Test func removesExcludedRecordsAndTheirVisibilityState() throws {
-        let (defaults, suiteName) = try isolatedDefaults("RecordRemoval")
-        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let suite = try IsolatedDefaults("RecordRemoval")
+        let defaults = suite.defaults
         let store = PlaybackHistoryStore(defaults: defaults)
         let ownApp = observation("self", name: "dBDeck")
         store.observe([ownApp], elapsed: 10)
@@ -116,8 +116,8 @@ struct PlaybackHistoryStoreTests {
     }
 
     @Test func visibilityMaintenanceRunsAtMostDailyAndPersists() throws {
-        let (defaults, suiteName) = try isolatedDefaults("Visibility")
-        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let suite = try IsolatedDefaults("Visibility")
+        let defaults = suite.defaults
         let store = PlaybackHistoryStore(defaults: defaults)
         let now = Date(timeIntervalSince1970: 2_000_000)
         let stale = playbackRecord(
@@ -174,10 +174,6 @@ struct PlaybackHistoryStoreTests {
         #expect(!isHidden(boundary.bundleID, in: reloaded))
     }
 
-    private func isolatedDefaults(_ label: String) throws -> (UserDefaults, String) {
-        let suiteName = "dBDeck\(label)Tests.\(UUID().uuidString)"
-        return (try #require(UserDefaults(suiteName: suiteName)), suiteName)
-    }
 
     private func observation(_ suffix: String, name: String) -> PlaybackObservation {
         PlaybackObservation(

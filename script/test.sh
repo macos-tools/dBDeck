@@ -2,6 +2,33 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+# Tests isolate their state in a UserDefaults suite named for a fresh UUID.
+# They empty the suite as they finish, but the preferences daemon writes
+# lazily and flushes its cached copy back afterwards, so a file per test is
+# left in the user's own preferences folder on every run. Deleting from
+# inside the tests is a race they cannot win, and a run's own files are
+# still being written as this script exits, so what this sweep collects is
+# the previous run's. That holds the footprint at one run's worth instead of
+# letting it grow without bound, which is what it did before.
+cleanup_test_defaults() {
+  local file domain
+  # The daemon flushes shortly after the test process exits, so give it a
+  # moment; sweeping before that just deletes files it is about to rewrite.
+  sleep 1
+  for file in "$HOME"/Library/Preferences/dBDeck*Tests.*.plist; do
+    [ -e "$file" ] || continue
+    domain="$(basename "$file" .plist)"
+    case "$domain" in
+      # Strictly the generated shape, so no real domain can match.
+      dBDeck*Tests.????????-????-????-????-????????????)
+        defaults delete -- "$domain" 2>/dev/null || true
+        rm -f -- "$file"
+        ;;
+    esac
+  done
+}
+trap cleanup_test_defaults EXIT
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/toolchain.sh"
 VERIFY_DIR="$ROOT_DIR/.build/verification"
 DISCOVERY_VERIFY_BINARY="$VERIFY_DIR/verify-audio-discovery"
